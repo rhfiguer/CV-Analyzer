@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cosmic CV Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              space: {
+                950: '#020617', // Deep space
+                900: '#0f172a',
+                800: '#1e293b',
+              },
+              neon: {
+                cyan: '#06b6d4',
+                purple: '#a855f7',
+                green: '#22c55e',
+              }
+            },
+            animation: {
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 6s ease-in-out infinite',
+              'spin-slow': 'spin 12s linear infinite',
+            },
+            keyframes: {
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        /* Removed background-color to let canvas show through */
+        color: white;
+        overflow-x: hidden;
+        margin: 0;
+      }
+      .glass-panel {
+        background: rgba(15, 23, 42, 0.4);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .neon-border-cyan {
+        box-shadow: 0 0 10px rgba(6, 182, 212, 0.3), inset 0 0 5px rgba(6, 182, 212, 0.1);
+      }
+      /* Canvas acts as the full background */
+      #starfield {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1; 
+        pointer-events: none;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3"
+  }
+}
+</script>
+</head>
+  <body>
+    <canvas id="starfield"></canvas>
+    <div id="root"></div>
+    <script>
+      // Starfield Logic
+      (function() {
+        const canvas = document.getElementById('starfield');
+        const ctx = canvas.getContext('2d');
+        
+        let width, height;
+        let stars = [];
+        
+        // Configuration
+        const STAR_COUNT = 400; 
+        const BASE_SPEED = 0.15;
+        const BG_COLOR = '#020617'; // Match Tailwind space-950
+        
+        class Star {
+          constructor() {
+            this.reset(true);
+          }
+          
+          reset(initial = false) {
+            this.x = Math.random() * width;
+            this.y = initial ? Math.random() * height : -10;
+            this.z = Math.random() * 0.8 + 0.2; // Depth
+            this.size = Math.random() * 2 + 0.5; 
+            this.fillAlpha = Math.random() * 0.5 + 0.5;
+            this.twinkleSpeed = Math.random() * 0.03 + 0.005;
+            this.twinklePhase = Math.random() * Math.PI * 2;
+          }
+          
+          update() {
+            // Parallax movement
+            this.y += BASE_SPEED * (this.z * 2.5);
+            
+            // Twinkle effect
+            this.twinklePhase += this.twinkleSpeed;
+            
+            // Reset if out of bounds
+            if (this.y > height) {
+              this.reset();
+            }
+          }
+          
+          draw() {
+            const opacity = this.fillAlpha + Math.sin(this.twinklePhase) * 0.3;
+            // Ensure opacity stays within valid range
+            const finalOpacity = Math.max(0.1, Math.min(1, opacity * this.z));
+            
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * this.z, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${finalOpacity})`;
+            ctx.fill();
+            
+            // Glow for big stars
+            if (this.z > 0.7 && finalOpacity > 0.5) {
+              ctx.shadowBlur = 8;
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+              ctx.fill();
+              ctx.shadowBlur = 0;
+            }
+          }
+        }
+        
+        function resize() {
+          width = window.innerWidth;
+          height = window.innerHeight;
+          canvas.width = width;
+          canvas.height = height;
+        }
+        
+        function init() {
+          resize();
+          stars = [];
+          for (let i = 0; i < STAR_COUNT; i++) {
+            stars.push(new Star());
+          }
+          animate();
+        }
+        
+        function animate() {
+          // Fill background manually to ensure it covers everything behind
+          ctx.fillStyle = BG_COLOR;
+          ctx.fillRect(0, 0, width, height);
+
+          // Optional: Add a subtle gradient to the background for depth
+          const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width);
+          gradient.addColorStop(0, 'rgba(15, 23, 42, 0)'); // transparent center
+          gradient.addColorStop(1, 'rgba(0, 0, 0, 0.4)'); // darker edges
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, width, height);
+          
+          stars.forEach(star => {
+            star.update();
+            star.draw();
+          });
+          requestAnimationFrame(animate);
+        }
+        
+        window.addEventListener('resize', resize);
+        init();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "Cosmic CV Analyzer",
+  "description": "Una experiencia de análisis de CV con temática espacial utilizando Gemini API.",
+  "requestFramePermissions": []
+}
