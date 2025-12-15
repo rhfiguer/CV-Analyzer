@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
@@ -21,6 +21,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   missionId 
 }) => {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [transmissionId, setTransmissionId] = useState<string>('');
 
   const handleSendEmail = async () => {
     if (emailStatus === 'sending') return;
@@ -41,7 +42,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       // 3. Send to Backend API with a race condition for safety
       // If the API call takes longer than 20 seconds, we treat it as a failure to unblock the UI
       const emailPromise = sendEmailReport(doc, userEmail, userName, missionTitle);
-      const timeoutPromise = new Promise<{ success: boolean, error: string }>((_, reject) => 
+      const timeoutPromise = new Promise<{ success: boolean, error: string, id?: string }>((_, reject) => 
         setTimeout(() => reject(new Error("Tiempo de espera agotado (Timeout)")), 20000)
       );
 
@@ -49,6 +50,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
       if (response.success) {
         setEmailStatus('sent');
+        if (response.id) setTransmissionId(response.id);
       } else {
         throw new Error(response.error);
       }
@@ -136,7 +138,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <h3 className="text-lg font-bold text-white mb-6 uppercase tracking-widest text-center">Plan de Vuelo Sugerido</h3>
         <div className="flex flex-col md:flex-row justify-between gap-4 relative">
             {/* Connecting Line (Desktop) */}
-            {/* FIX: Posicionar top-8 (2rem/32px) para alinear con el centro de los círculos (padding 1rem + radio 1rem) */}
             <div className="hidden md:block absolute top-8 left-4 right-4 h-0.5 bg-slate-700/50 -z-0"></div>
             
             {result.plan_de_vuelo.map((step, idx) => (
@@ -166,7 +167,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           className={`
             relative overflow-hidden group px-8 py-3 rounded-full font-bold transition-all border
             ${emailStatus === 'sent' 
-              ? 'bg-green-500/20 border-green-500 text-green-400 cursor-default' 
+              ? 'bg-green-500/10 border-green-500/50 text-green-400 cursor-default' 
               : emailStatus === 'error'
               ? 'bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30'
               : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)]'
@@ -199,16 +200,52 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </button>
       </div>
       
+      {/* SUCCESS & SPAM WARNING PANEL */}
       {emailStatus === 'sent' && (
-        <p className="text-center text-xs text-slate-500 mt-2 animate-pulse">
-          * Correo enviado con éxito a {userEmail}.
-        </p>
+        <div className="mt-6 bg-slate-900/80 border border-green-500/30 rounded-xl p-5 animate-[fadeIn_0.5s_ease-out] shadow-lg">
+            
+            {/* Header: Success */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-500/20 rounded-full text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                        <Radio size={24} className="animate-pulse"/>
+                    </div>
+                    <div>
+                        <h4 className="text-green-400 font-bold text-lg leading-none">Señal Recibida</h4>
+                        <p className="text-slate-400 text-xs mt-1">Paquete entregado a: {userEmail}</p>
+                    </div>
+                </div>
+                {transmissionId && (
+                    <div className="bg-black/40 rounded px-3 py-1 font-mono text-[10px] text-slate-500 border border-slate-700 tracking-wider">
+                        ID: {transmissionId.slice(0, 18)}...
+                    </div>
+                )}
+            </div>
+
+            {/* Warning: Spam */}
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex items-start gap-4">
+                <div className="bg-amber-500/20 p-2 rounded-full shrink-0">
+                    <AlertTriangle className="text-amber-400" size={20} />
+                </div>
+                <div>
+                    <p className="text-amber-200 font-bold text-sm uppercase tracking-wide mb-1">
+                        Protocolo de Búsqueda
+                    </p>
+                    <p className="text-amber-100/80 text-sm leading-relaxed">
+                        Si no visualiza el reporte en su bandeja principal en los próximos 60 segundos, 
+                        es <strong>imperativo</strong> verificar su carpeta de <strong className="text-white bg-amber-600/50 px-1 rounded">SPAM / CORREO NO DESEADO</strong>. 
+                        Los filtros de seguridad terrestres a menudo interceptan nuestras transmisiones.
+                    </p>
+                </div>
+            </div>
+        </div>
       )}
+
       {emailStatus === 'error' && (
-        <div className="flex items-center justify-center gap-2 mt-2 animate-pulse">
-            <AlertCircle size={14} className="text-red-400"/>
-            <p className="text-center text-xs text-red-400">
-                La frecuencia de comunicación falló. El reporte se ha descargado a tu dispositivo.
+        <div className="flex items-center justify-center gap-2 mt-4 animate-pulse bg-red-900/20 p-3 rounded-lg border border-red-900/50">
+            <AlertCircle size={16} className="text-red-400"/>
+            <p className="text-center text-sm text-red-300">
+                Error en la red subespacial. El reporte se ha descargado a tu dispositivo localmente.
             </p>
         </div>
       )}

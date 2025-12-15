@@ -9,7 +9,7 @@ export const sendEmailReport = async (
   email: string,
   name: string,
   missionTitle?: string
-): Promise<{ success: boolean; error?: string }> => {
+): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     // 1. Extract Base64 string from jsPDF
     const pdfBase64 = doc.output('datauristring').split(',')[1];
@@ -42,7 +42,6 @@ export const sendEmailReport = async (
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
-        // Log the first 200 chars to see if it's an error page or the app HTML
         console.error("CRITICAL API ERROR. Received Non-JSON:", text.substring(0, 200));
         
         if (response.status === 404) {
@@ -61,7 +60,7 @@ export const sendEmailReport = async (
     }
 
     console.log("Uplink successful:", data.id);
-    return { success: true };
+    return { success: true, id: data.id };
 
   } catch (error: any) {
     console.error("Transmission Error:", error);

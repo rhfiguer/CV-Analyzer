@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
+  // 1. Configuración CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -23,13 +24,17 @@ export default async function handler(req, res) {
   try {
     const { email, name, pdfBase64, missionTitle } = req.body;
 
+    console.log(`[API START] Iniciando proceso de envío para: ${email}`);
+
+    // Check Environment
     if (!process.env.RESEND_API_KEY) {
-       console.error("Missing RESEND_API_KEY");
-       return res.status(500).json({ error: 'Server configuration error' });
+       console.error("[API ERROR] Missing RESEND_API_KEY");
+       return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
     }
 
     if (!email || !name || !pdfBase64) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      console.error("[API ERROR] Missing required fields in body");
+      return res.status(400).json({ error: 'Missing required fields (email, name, or pdf)' });
     }
 
     const emailHtml = `
@@ -46,12 +51,19 @@ export default async function handler(req, res) {
               Estado: <strong>COMPLETADO</strong> | Adjunto: <strong>PDF Táctico</strong>
             </p>
           </div>
+          <p style="font-size: 12px; color: #64748b; margin-top: 30px;">
+            Sistema de Reclutamiento Interestelar v2.5
+          </p>
         </div>
       </div>
     `;
 
+    console.log("[API] Enviando solicitud a Resend...");
+
+    // IMPORTANTE: Si usas 'onboarding@resend.dev', SOLO puedes enviar al correo con el que te registraste en Resend.
+    // Para enviar a otros correos, debes verificar tu propio dominio en el dashboard de Resend.
     const data = await resend.emails.send({
-      from: 'Cosmic CV <onboarding@resend.dev>',
+      from: 'Cosmic CV <onboarding@resend.dev>', 
       to: [email],
       subject: `🚀 Reporte de Misión: ${name}`,
       html: emailHtml,
@@ -64,15 +76,21 @@ export default async function handler(req, res) {
       ],
     });
 
+    console.log("[API] Respuesta completa de Resend:", JSON.stringify(data, null, 2));
+
     if (data.error) {
-        console.error("Resend API Error:", data.error);
-        return res.status(500).json({ error: data.error.message });
+        console.error("[API ERROR] Resend rechazó la solicitud:", data.error);
+        return res.status(500).json({ 
+            error: data.error.message, 
+            details: data.error.name 
+        });
     }
 
+    console.log(`[API SUCCESS] Correo enviado. ID: ${data.data?.id}`);
     return res.status(200).json({ success: true, id: data.data?.id });
 
   } catch (error) {
-    console.error("Serverless Function Critical Error:", error);
+    console.error("[API CRITICAL FAILURE]:", error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
