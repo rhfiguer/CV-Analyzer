@@ -1,10 +1,10 @@
-const { GoogleGenAI } = require("@google/genai");
+import { GoogleGenAI, Type } from "@google/genai";
 
-// Inicializar cliente con la API Key del entorno de servidor (seguro)
+// Inicializar cliente con la API Key del entorno de servidor
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-module.exports = async (req, res) => {
-  // 1. Configuración CORS (Permitir peticiones desde el frontend)
+export default async function handler(req, res) {
+  // 1. Configuración CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -13,31 +13,28 @@ module.exports = async (req, res) => {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Manejo de preflight request
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  // Solo permitir POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // 2. Extraer datos del cuerpo JSON
     const { fileBase64, mimeType, missionId, name } = req.body;
 
     if (!process.env.API_KEY) {
-      console.error("Server Error: Missing API_KEY in environment variables.");
-      return res.status(500).json({ error: 'Configuración del servidor incompleta.' });
+      console.error("Server Error: Missing API_KEY");
+      return res.status(500).json({ error: 'Server configuration error' });
     }
 
     if (!fileBase64 || !missionId || !name) {
-      return res.status(400).json({ error: 'Faltan datos requeridos (archivo, misión o nombre).' });
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // 3. Construir el contexto de la misión (Lógica movida del frontend al backend)
+    // Contexto de misión
     let missionContext = "";
     switch (missionId) {
       case 'GLOBAL':
@@ -66,45 +63,22 @@ module.exports = async (req, res) => {
       Sé crítico pero motivador.
     `;
 
-    // 4. Configuración del Schema de respuesta (JSON Estricto)
-    // Definimos el esquema manualmente para asegurar consistencia
+    // Schema de respuesta
     const responseSchema = {
-      type: "OBJECT",
+      type: Type.OBJECT,
       properties: {
-        nivel_actual: {
-          type: "STRING",
-          description: "Nivel de seniority con rango espacial (ej: Cadete, Comandante, Almirante).",
-        },
-        probabilidad_exito: {
-          type: "NUMBER",
-          description: "Probabilidad estimada de éxito en la misión (0-100).",
-        },
-        analisis_mision: {
-          type: "STRING",
-          description: "Feedback detallado sobre el encaje con la misión específica.",
-        },
-        puntos_fuertes: {
-          type: "ARRAY",
-          items: { type: "STRING" },
-          description: "Lista de 3-5 fortalezas clave.",
-        },
-        brechas_criticas: {
-          type: "ARRAY",
-          items: { type: "STRING" },
-          description: "Lista de 3-5 áreas que faltan o necesitan mejora urgente.",
-        },
-        plan_de_vuelo: {
-          type: "ARRAY",
-          items: { type: "STRING" },
-          description: "3 pasos accionables y concretos para mejorar el perfil.",
-        },
+        nivel_actual: { type: Type.STRING },
+        probabilidad_exito: { type: Type.NUMBER },
+        analisis_mision: { type: Type.STRING },
+        puntos_fuertes: { type: Type.ARRAY, items: { type: Type.STRING } },
+        brechas_criticas: { type: Type.ARRAY, items: { type: Type.STRING } },
+        plan_de_vuelo: { type: Type.ARRAY, items: { type: Type.STRING } },
       },
       required: ["nivel_actual", "probabilidad_exito", "analisis_mision", "puntos_fuertes", "brechas_criticas", "plan_de_vuelo"],
     };
 
-    console.log(`Iniciando análisis para ${name} en misión ${missionId}...`);
+    console.log(`Iniciando análisis para ${name}...`);
 
-    // 5. Llamada a Gemini (usando gemini-2.5-flash para mejor rendimiento y JSON mode)
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: {
@@ -125,22 +99,13 @@ module.exports = async (req, res) => {
       },
     });
 
-    // 6. Procesar y devolver respuesta
-    const responseText = response.text();
-    
-    if (!responseText) {
-      throw new Error("Gemini no devolvió texto.");
-    }
+    const responseText = response.text;
+    if (!responseText) throw new Error("Gemini no devolvió texto.");
 
-    const jsonResult = JSON.parse(responseText);
-    
-    return res.status(200).json(jsonResult);
+    return res.status(200).json(JSON.parse(responseText));
 
   } catch (error) {
     console.error("Error en /api/analyze:", error);
-    return res.status(500).json({ 
-      error: error.message || "Fallo crítico en el motor de análisis.",
-      details: error.toString()
-    });
+    return res.status(500).json({ error: error.message || "Fallo crítico en el motor de análisis." });
   }
-};
+}

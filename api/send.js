@@ -1,9 +1,8 @@
-const { Resend } = require('resend');
+import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-module.exports = async (req, res) => {
-  // Configuración de CORS
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -26,7 +25,7 @@ module.exports = async (req, res) => {
 
     if (!process.env.RESEND_API_KEY) {
        console.error("Missing RESEND_API_KEY");
-       return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
+       return res.status(500).json({ error: 'Server configuration error' });
     }
 
     if (!email || !name || !pdfBase64) {
@@ -39,19 +38,14 @@ module.exports = async (req, res) => {
           <h1 style="color: #22d3ee; margin-top: 0;">Reporte de Misión Generado</h1>
           <p style="font-size: 16px; line-height: 1.6;">Saludos, Comandante <strong>${name}</strong>.</p>
           <p style="font-size: 16px; line-height: 1.6;">
-            La Inteligencia Artificial de la flota ha completado el análisis de tu perfil para la misión: 
-            <strong style="color: #f472b6;">${missionTitle || 'Operación Clasificada'}</strong>.
+            La IA de la flota ha analizado tu perfil para: 
+            <strong style="color: #f472b6;">${missionTitle || 'Misión Clasificada'}</strong>.
           </p>
           <div style="background-color: #0f172a; padding: 15px; border-left: 4px solid #22d3ee; margin: 20px 0;">
             <p style="margin: 0; font-size: 14px; color: #94a3b8;">
-              Estado de transmisión: <strong>COMPLETADO</strong><br/>
-              Archivo adjunto: <strong>Reporte Táctico (PDF)</strong>
+              Estado: <strong>COMPLETADO</strong> | Adjunto: <strong>PDF Táctico</strong>
             </p>
           </div>
-          <p style="font-size: 14px; color: #94a3b8; margin-top: 30px; border-top: 1px solid #334155; padding-top: 20px;">
-            Cosmic CV Analyzer - Sistema de Reclutamiento Interestelar.<br/>
-            Este es un mensaje automático. No responder a esta frecuencia.
-          </p>
         </div>
       </div>
     `;
@@ -81,4 +75,4 @@ module.exports = async (req, res) => {
     console.error("Serverless Function Critical Error:", error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
-};
+}

@@ -1,15 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 import { MissionId } from '../types';
 
-// NOTE: In a real production app, use process.env.NEXT_PUBLIC_SUPABASE_URL
-// You must set these variables in your environment or replace them here for testing.
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+// EN VITE, USAMOS import.meta.env EN LUGAR DE process.env
+// Y LAS VARIABLES PÚBLICAS DEBEN EMPEZAR CON VITE_
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
 let supabase: any = null;
 
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  try {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    console.error("Supabase client init failed:", e);
+  }
+} else {
+  console.warn("Supabase credentials not found. Check VITE_SUPABASE_URL in Vercel env vars.");
 }
 
 export const saveLead = async (
@@ -19,7 +25,8 @@ export const saveLead = async (
   missionId?: MissionId | null
 ) => {
   if (!supabase) {
-    console.warn("Supabase not configured. Data will not be saved remotely.");
+    // Fail silently in UI, just log in console
+    console.warn("Supabase not configured. Lead not saved.");
     return;
   }
 
