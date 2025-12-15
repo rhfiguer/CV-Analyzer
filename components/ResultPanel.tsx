@@ -134,21 +134,26 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       </div>
 
       {/* Flight Plan */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700">
-        <h3 className="text-lg font-bold text-white mb-6 uppercase tracking-widest text-center">Plan de Vuelo Sugerido</h3>
-        <div className="flex flex-col md:flex-row justify-between gap-4 relative">
-            {/* Connecting Line (Desktop) */}
-            <div className="hidden md:block absolute top-8 left-4 right-4 h-0.5 bg-slate-700/50 -z-0"></div>
-            
-            {result.plan_de_vuelo.map((step, idx) => (
-                <div key={idx} className="relative z-10 flex-1 bg-slate-950 border border-slate-600 p-4 rounded-xl flex flex-col items-center text-center hover:border-cyan-400 transition-colors h-full shadow-lg">
-                    {/* Circle Indicator */}
-                    <div className="w-8 h-8 rounded-full bg-slate-900 text-cyan-400 flex items-center justify-center font-bold mb-3 border-2 border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
-                        {idx + 1}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 relative overflow-hidden">
+        <h3 className="text-lg font-bold text-white mb-8 uppercase tracking-widest text-center relative z-10">Plan de Vuelo Sugerido</h3>
+        
+        {/* Container relativo para posicionar la línea */}
+        <div className="relative">
+             {/* Connecting Line (Desktop) - Ahora posicionado absolutamente dentro del contenedor relativo */}
+             <div className="hidden md:block absolute top-8 left-[10%] right-[10%] h-0.5 bg-slate-700/50 -z-0"></div>
+
+             {/* CSS GRID para distribución exacta (Evita desenfoque/compresión del último elemento) */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative z-10">
+                {result.plan_de_vuelo.map((step, idx) => (
+                    <div key={idx} className="bg-slate-950/80 backdrop-blur-sm border border-slate-600 p-4 rounded-xl flex flex-col items-center text-center hover:border-cyan-400 transition-all hover:-translate-y-1 duration-300 h-full shadow-lg group">
+                        {/* Circle Indicator */}
+                        <div className="w-8 h-8 rounded-full bg-slate-900 text-cyan-400 flex items-center justify-center font-bold mb-3 border-2 border-slate-600 group-hover:border-cyan-400 transition-colors shadow-[0_0_10px_rgba(6,182,212,0.1)] z-20">
+                            {idx + 1}
+                        </div>
+                        <p className="text-xs sm:text-sm text-slate-300 leading-snug">{step}</p>
                     </div>
-                    <p className="text-sm text-slate-300 leading-snug">{step}</p>
-                </div>
-            ))}
+                ))}
+            </div>
         </div>
       </div>
 

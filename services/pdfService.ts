@@ -32,7 +32,7 @@ export const generateMissionReport = (result: AnalysisResult, userName: string, 
 
   yPos = 55;
 
-  // --- Score Section ---
+  // --- Score Section (Fixed Overlap) ---
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
@@ -41,12 +41,29 @@ export const generateMissionReport = (result: AnalysisResult, userName: string, 
   yPos += 8;
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Rango Asignado: ${result.nivel_actual}`, margin, yPos);
-  doc.text(`Probabilidad de Éxito: ${result.probabilidad_exito}%`, margin + 100, yPos);
+  
+  // Imprimir Rango
+  doc.text(`Rango Asignado:`, margin, yPos);
+  doc.setFont("helvetica", "bold");
+  doc.text(result.nivel_actual, margin + 30, yPos);
+  
+  // Imprimir Probabilidad en la siguiente línea para evitar colisiones con descripciones largas
+  yPos += 6; 
+  doc.setFont("helvetica", "normal");
+  doc.text(`Probabilidad de Éxito:`, margin, yPos);
+  
+  // Color code probability
+  if (result.probabilidad_exito > 70) doc.setTextColor(34, 197, 94); // Green
+  else if (result.probabilidad_exito > 40) doc.setTextColor(234, 179, 8); // Yellow
+  else doc.setTextColor(239, 68, 68); // Red
+  
+  doc.setFont("helvetica", "bold");
+  doc.text(`${result.probabilidad_exito}%`, margin + 38, yPos);
   
   yPos += 15;
 
   // --- Analysis ---
+  doc.setTextColor(0, 0, 0); // Reset black
   doc.setDrawColor(6, 182, 212); // Cyan
   doc.setLineWidth(0.5);
   doc.line(margin, yPos - 5, pageWidth - margin, yPos - 5);
@@ -113,22 +130,25 @@ export const generateMissionReport = (result: AnalysisResult, userName: string, 
   });
   yPos += 10;
 
-  // --- Flight Plan (Dynamic Box) ---
+  // --- Flight Plan (Improved Spacing) ---
   
-  // 1. Pre-calculate text wrapping to determine box height
+  // 1. Calculate text wrapping first to get total box height
   const flightStepLines = result.plan_de_vuelo.map((step, index) => {
     const text = `${index + 1}. ${step}`;
-    // Indent text slightly inside box
-    return doc.splitTextToSize(text, contentWidth - 10);
+    // Wrap slightly tighter for visual padding
+    return doc.splitTextToSize(text, contentWidth - 14);
   });
 
+  const lineHeight = 6; // Increased from 5 for better readability
+  const gapBetweenSteps = 6; // Increased gap
+  
   let totalTextHeight = 0;
   flightStepLines.forEach(lines => {
-    totalTextHeight += (lines.length * 5) + 4; // 5 units per line + 4 units gap
+    totalTextHeight += (lines.length * lineHeight) + gapBetweenSteps;
   });
 
   const boxHeaderHeight = 15;
-  const boxPaddingBottom = 5;
+  const boxPaddingBottom = 10;
   const totalBoxHeight = boxHeaderHeight + totalTextHeight + boxPaddingBottom;
 
   checkPageBreak(totalBoxHeight + 10);
@@ -143,15 +163,15 @@ export const generateMissionReport = (result: AnalysisResult, userName: string, 
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("PLAN DE VUELO SUGERIDO", margin + 5, boxStartY + 10);
+  doc.text("PLAN DE VUELO SUGERIDO", margin + 7, boxStartY + 10);
   
-  let currentTextY = boxStartY + 18;
+  let currentTextY = boxStartY + 20;
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   
   flightStepLines.forEach(lines => {
-    doc.text(lines, margin + 5, currentTextY);
-    currentTextY += (lines.length * 5) + 4;
+    doc.text(lines, margin + 7, currentTextY);
+    currentTextY += (lines.length * lineHeight) + gapBetweenSteps;
   });
   
   // --- Footer on all pages ---
