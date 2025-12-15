@@ -52,7 +52,7 @@ export default async function handler(req, res) {
             </p>
           </div>
           <p style="font-size: 12px; color: #64748b; margin-top: 30px;">
-            Sistema de Reclutamiento Interestelar v2.5
+            Para Migrantes de Alta Ambición de Superación
           </p>
         </div>
       </div>
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
     // IMPORTANTE: Si usas 'onboarding@resend.dev', SOLO puedes enviar al correo con el que te registraste en Resend.
     // Para enviar a otros correos, debes verificar tu propio dominio en el dashboard de Resend.
     const data = await resend.emails.send({
-      from: 'Cosmic CV <onboarding@resend.dev>', 
+      from: 'Analizador Cósmico de CV <onboarding@resend.dev>', 
       to: [email],
       subject: `🚀 Reporte de Misión: ${name}`,
       html: emailHtml,

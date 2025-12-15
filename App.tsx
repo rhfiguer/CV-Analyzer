@@ -168,14 +168,13 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="text-center mb-8 md:mb-12 animate-[fadeIn_1s_ease-out]">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800 text-cyan-400 text-xs font-bold tracking-widest uppercase mb-4">
-            <Sparkles size={12} /> Sistema de Reclutamiento Interestelar v2.5
+            <Sparkles size={12} /> Para Migrantes de Alta Ambición de Superación
           </div>
           <h1 className="text-3xl md:text-6xl font-extrabold bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500 mb-2 md:mb-4">
-            Cosmic CV Analyzer
+            Analizador Cósmico de CV
           </h1>
           <p className="text-slate-400 max-w-xl mx-auto text-sm md:text-base">
-            Optimiza tu perfil profesional para el mercado laboral intergaláctico usando 
-            Inteligencia Artificial de última generación.
+            Diseñado para quienes no conocen fronteras. Calibra tu perfil con estándares internacionales y prepárate para un salto de carrera exponencial.
           </p>
         </header>
 

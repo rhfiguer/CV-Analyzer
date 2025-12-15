@@ -24,7 +24,7 @@ export const generateMissionReport = (result: AnalysisResult, userName: string, 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.text("REPORTE DE MISIÓN: COSMIC CV", margin, 25);
+  doc.text("REPORTE DE MISIÓN: ANALIZADOR CÓSMICO DE CV", margin, 25);
   
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
@@ -181,7 +181,7 @@ export const generateMissionReport = (result: AnalysisResult, userName: string, 
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
     doc.text(
-      `Página ${i} de ${pageCount} - Generado por IA - Cosmic CV Analyzer`, 
+      `Página ${i} de ${pageCount} - Generado por IA - Analizador Cósmico de CV`, 
       pageWidth / 2, 
       pageHeight - 10, 
       { align: "center" }
