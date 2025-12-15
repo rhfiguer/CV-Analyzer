@@ -417,6 +417,7 @@ const App: React.FC = () => {
                 onReset={resetMission}
                 userName={formData.name}
                 userEmail={formData.email}
+                missionId={formData.mission}
                />
             )}
 

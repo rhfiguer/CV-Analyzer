@@ -1,32 +1,71 @@
 import React, { useState } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
+import { sendEmailReport } from '../services/emailService';
+import { MISSIONS } from '../constants';
 
 interface ResultPanelProps {
   result: AnalysisResult;
   onReset: () => void;
-  // We need these to personalize the PDF
   userName?: string; 
   userEmail?: string;
+  missionId?: string;
 }
 
-export const ResultPanel: React.FC<ResultPanelProps> = ({ result, onReset, userName = "Comandante", userEmail = "" }) => {
-  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+export const ResultPanel: React.FC<ResultPanelProps> = ({ 
+  result, 
+  onReset, 
+  userName = "Comandante", 
+  userEmail = "",
+  missionId 
+}) => {
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   const handleSendEmail = async () => {
+    if (emailStatus === 'sending') return;
+    
     setEmailStatus('sending');
     
-    // 1. Generate PDF
-    const doc = generateMissionReport(result, userName, userEmail);
-    
-    // 2. Simulate API Latency (In a real app, you would send doc.output('blob') to your backend)
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // 3. Fallback: Download the PDF to the client so they have it immediately
-    doc.save(`Mision_Cosmica_${userName.replace(/\s+/g, '_')}.pdf`);
-    
-    setEmailStatus('sent');
+    // 1. Give UI a moment to update state before heavy processing (PDF generation)
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    try {
+      // 2. Generate PDF
+      console.log("Generating PDF...");
+      const doc = generateMissionReport(result, userName, userEmail);
+      const missionTitle = MISSIONS.find(m => m.id === missionId)?.title;
+      
+      console.log("Sending email request...");
+      
+      // 3. Send to Backend API with a race condition for safety
+      // If the API call takes longer than 20 seconds, we treat it as a failure to unblock the UI
+      const emailPromise = sendEmailReport(doc, userEmail, userName, missionTitle);
+      const timeoutPromise = new Promise<{ success: boolean, error: string }>((_, reject) => 
+        setTimeout(() => reject(new Error("Tiempo de espera agotado (Timeout)")), 20000)
+      );
+
+      const response = await Promise.race([emailPromise, timeoutPromise]);
+
+      if (response.success) {
+        setEmailStatus('sent');
+      } else {
+        throw new Error(response.error);
+      }
+      
+    } catch (error: any) {
+      console.error("Transmission failed, initiating manual override:", error);
+      
+      // 4. Fallback: Download locally immediately if API fails
+      try {
+        const doc = generateMissionReport(result, userName, userEmail);
+        doc.save(`Mision_Cosmica_${userName.replace(/\s+/g, '_')}.pdf`);
+      } catch (pdfError) {
+        console.error("Local save failed too:", pdfError);
+      }
+      
+      setEmailStatus('error'); 
+    }
   };
 
   return (
@@ -121,11 +160,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({ result, onReset, userN
 
         <button
           onClick={handleSendEmail}
-          disabled={emailStatus !== 'idle'}
+          disabled={emailStatus === 'sending' || emailStatus === 'sent'}
           className={`
             relative overflow-hidden group px-8 py-3 rounded-full font-bold transition-all border
             ${emailStatus === 'sent' 
-              ? 'bg-green-500/20 border-green-500 text-green-400' 
+              ? 'bg-green-500/20 border-green-500 text-green-400 cursor-default' 
+              : emailStatus === 'error'
+              ? 'bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30'
               : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)]'
             }
           `}
@@ -147,14 +188,27 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({ result, onReset, userN
                 <CheckCircle size={18} /> Transmisión Completada
               </>
             )}
+            {emailStatus === 'error' && (
+               <>
+                <Download size={18} /> Descarga Manual (Error de Red)
+               </>
+            )}
           </div>
         </button>
       </div>
       
       {emailStatus === 'sent' && (
         <p className="text-center text-xs text-slate-500 mt-2 animate-pulse">
-          * Copia de seguridad descargada en el dispositivo local.
+          * Correo enviado con éxito a {userEmail}.
         </p>
+      )}
+      {emailStatus === 'error' && (
+        <div className="flex items-center justify-center gap-2 mt-2 animate-pulse">
+            <AlertCircle size={14} className="text-red-400"/>
+            <p className="text-center text-xs text-red-400">
+                La frecuencia de comunicación falló. El reporte se ha descargado a tu dispositivo.
+            </p>
+        </div>
       )}
     </div>
   );
