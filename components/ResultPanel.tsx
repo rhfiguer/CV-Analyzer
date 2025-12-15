@@ -13,6 +13,28 @@ interface ResultPanelProps {
   missionId?: string;
 }
 
+// Helper para procesar el formato de texto de los pasos (ej: "**Título**: Descripción")
+const parseStepContent = (text: string) => {
+  // 1. Intentar detectar formato Markdown Bold: **Título**: Descripción
+  const mdMatch = text.match(/\*\*(.*?)\*\*:?\s*(.*)/s);
+  if (mdMatch) {
+    return { title: mdMatch[1], body: mdMatch[2] };
+  }
+
+  // 2. Intentar detectar formato con dos puntos: Título: Descripción
+  // Limitamos la búsqueda del dos puntos a los primeros 60 caracteres para evitar falsos positivos en oraciones largas
+  const colonIndex = text.indexOf(':');
+  if (colonIndex > 0 && colonIndex < 60) {
+    return { 
+      title: text.substring(0, colonIndex).trim(), 
+      body: text.substring(colonIndex + 1).trim() 
+    };
+  }
+
+  // 3. Fallback: Devolver todo como cuerpo si no hay estructura clara
+  return { title: '', body: text };
+};
+
 export const ResultPanel: React.FC<ResultPanelProps> = ({ 
   result, 
   onReset, 
@@ -139,20 +161,34 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         
         {/* Container relativo para posicionar la línea */}
         <div className="relative">
-             {/* Connecting Line (Desktop) - Ahora posicionado absolutamente dentro del contenedor relativo */}
+             {/* Connecting Line (Desktop) */}
              <div className="hidden md:block absolute top-8 left-[10%] right-[10%] h-0.5 bg-slate-700/50 -z-0"></div>
 
-             {/* CSS GRID para distribución exacta (Evita desenfoque/compresión del último elemento) */}
+             {/* CSS GRID para distribución exacta */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative z-10">
-                {result.plan_de_vuelo.map((step, idx) => (
-                    <div key={idx} className="bg-slate-950/80 backdrop-blur-sm border border-slate-600 p-4 rounded-xl flex flex-col items-center text-center hover:border-cyan-400 transition-all hover:-translate-y-1 duration-300 h-full shadow-lg group">
-                        {/* Circle Indicator */}
-                        <div className="w-8 h-8 rounded-full bg-slate-900 text-cyan-400 flex items-center justify-center font-bold mb-3 border-2 border-slate-600 group-hover:border-cyan-400 transition-colors shadow-[0_0_10px_rgba(6,182,212,0.1)] z-20">
-                            {idx + 1}
+                {result.plan_de_vuelo.map((step, idx) => {
+                    const { title, body } = parseStepContent(step);
+                    return (
+                        <div key={idx} className="bg-slate-950 border border-slate-600 p-4 rounded-xl flex flex-col items-center hover:border-cyan-400 transition-all hover:-translate-y-1 duration-300 h-full shadow-lg group">
+                            {/* Circle Indicator */}
+                            <div className="w-8 h-8 rounded-full bg-slate-900 text-cyan-400 flex items-center justify-center font-bold mb-3 border-2 border-slate-600 group-hover:border-cyan-400 transition-colors shadow-[0_0_10px_rgba(6,182,212,0.1)] z-20 shrink-0">
+                                {idx + 1}
+                            </div>
+                            
+                            {/* Content Container */}
+                            <div className="flex flex-col gap-2 w-full">
+                                {title && (
+                                    <h4 className="text-cyan-300 font-bold text-xs sm:text-sm text-center leading-tight">
+                                        {title}
+                                    </h4>
+                                )}
+                                <p className={`text-xs text-slate-300 leading-relaxed ${title ? 'text-left' : 'text-center'}`}>
+                                    {body}
+                                </p>
+                            </div>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-300 leading-snug">{step}</p>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
       </div>
