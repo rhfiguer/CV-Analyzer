@@ -26,4 +26,5 @@ export interface FormDataState {
   email: string;
   mission: MissionId | null;
   file: File | null;
+  marketingConsent: boolean;
 }

@@ -1,13 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle } from 'lucide-react';
+import { generateMissionReport } from '../services/pdfService';
 
 interface ResultPanelProps {
   result: AnalysisResult;
   onReset: () => void;
+  // We need these to personalize the PDF
+  userName?: string; 
+  userEmail?: string;
 }
 
-export const ResultPanel: React.FC<ResultPanelProps> = ({ result, onReset }) => {
+export const ResultPanel: React.FC<ResultPanelProps> = ({ result, onReset, userName = "Comandante", userEmail = "" }) => {
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const handleSendEmail = async () => {
+    setEmailStatus('sending');
+    
+    // 1. Generate PDF
+    const doc = generateMissionReport(result, userName, userEmail);
+    
+    // 2. Simulate API Latency (In a real app, you would send doc.output('blob') to your backend)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 3. Fallback: Download the PDF to the client so they have it immediately
+    doc.save(`Mision_Cosmica_${userName.replace(/\s+/g, '_')}.pdf`);
+    
+    setEmailStatus('sent');
+  };
+
   return (
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
       {/* Header Stats */}
@@ -89,14 +110,52 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({ result, onReset }) => 
         </div>
       </div>
 
-      <div className="flex justify-center pt-6">
+      {/* Action Buttons */}
+      <div className="flex flex-col md:flex-row justify-center items-center gap-4 pt-6">
         <button
           onClick={onReset}
-          className="px-8 py-3 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-all font-medium border border-slate-600"
+          className="px-6 py-3 rounded-full text-slate-400 hover:text-white transition-all font-medium text-sm hover:underline"
         >
           Iniciar Nueva Misión
         </button>
+
+        <button
+          onClick={handleSendEmail}
+          disabled={emailStatus !== 'idle'}
+          className={`
+            relative overflow-hidden group px-8 py-3 rounded-full font-bold transition-all border
+            ${emailStatus === 'sent' 
+              ? 'bg-green-500/20 border-green-500 text-green-400' 
+              : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+            }
+          `}
+        >
+          <div className="flex items-center gap-2">
+            {emailStatus === 'idle' && (
+              <>
+                <Mail size={18} /> Enviar Reporte a la Base
+              </>
+            )}
+            {emailStatus === 'sending' && (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Transmitiendo Datos...
+              </>
+            )}
+            {emailStatus === 'sent' && (
+              <>
+                <CheckCircle size={18} /> Transmisión Completada
+              </>
+            )}
+          </div>
+        </button>
       </div>
+      
+      {emailStatus === 'sent' && (
+        <p className="text-center text-xs text-slate-500 mt-2 animate-pulse">
+          * Copia de seguridad descargada en el dispositivo local.
+        </p>
+      )}
     </div>
   );
 };

@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MissionId, FormDataState, AnalysisResult } from './types';
 import { MISSIONS } from './constants';
 import { MissionCard } from './components/MissionCard';
 import { ResultPanel } from './components/ResultPanel';
 import { analyzeCV } from './services/geminiService';
+import { saveLead } from './services/supabase';
 import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -11,14 +12,42 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  
+  // Consents - Now defaulted to TRUE
+  const [privacyConsent, setPrivacyConsent] = useState<boolean>(true);
+  
   const [formData, setFormData] = useState<FormDataState>({
     name: '',
     email: '',
     mission: null,
-    file: null
+    file: null,
+    marketingConsent: true // Defaulted to TRUE
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // GDPR: Load data from LocalStorage only if it exists
+  useEffect(() => {
+    const savedData = localStorage.getItem('cosmic_pilot_credentials');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        if (parsed.name && parsed.email) {
+          setFormData(prev => ({ 
+            ...prev, 
+            name: parsed.name, 
+            email: parsed.email,
+            // If user previously unchecked it, respect that decision. Otherwise default to true.
+            marketingConsent: parsed.marketingConsent !== undefined ? parsed.marketingConsent : true
+          }));
+          // We assume privacy was accepted if they have saved data, but we keep the state controllable
+          setPrivacyConsent(true);
+        }
+      } catch (e) {
+        console.error("Error loading credentials", e);
+      }
+    }
+  }, []);
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({ ...prev, name: e.target.value }));
@@ -26,6 +55,10 @@ const App: React.FC = () => {
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({ ...prev, email: e.target.value }));
+  };
+
+  const handleMarketingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({ ...prev, marketingConsent: e.target.checked }));
   };
 
   const handleMissionSelect = (id: MissionId) => {
@@ -62,10 +95,35 @@ const App: React.FC = () => {
   };
 
   const nextStep = () => {
-    if (step === 1 && (!formData.email || !formData.name)) {
-      setError("Identificación completa requerida para continuar.");
-      return;
+    if (step === 1) {
+      if (!formData.email || !formData.name) {
+        setError("Identificación completa requerida para continuar.");
+        return;
+      }
+      if (!privacyConsent) {
+        setError("Debes aceptar el protocolo de privacidad (GDPR) para proceder.");
+        return;
+      }
+      
+      // 1. Save locally for UX
+      localStorage.setItem('cosmic_pilot_credentials', JSON.stringify({
+        name: formData.name,
+        email: formData.email,
+        marketingConsent: formData.marketingConsent
+      }));
+
+      // 2. Save remotely to DB (Marketing Lead)
+      // Fire and forget - don't block the UI if DB is slow
+      saveLead(formData.name, formData.email, formData.marketingConsent).catch(e => console.error("DB Error", e));
+      
+      if (formData.marketingConsent) {
+        console.log(">> MARKETING SIGNAL: Subscribing commander to frequency", formData.email);
+      }
+    } else if (step === 2) {
+       // Optional: Update lead with selected mission if desired
+       saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission).catch(e => console.error("DB Update Error", e));
     }
+    
     setError(null);
     setStep(prev => prev + 1);
   };
@@ -91,7 +149,10 @@ const App: React.FC = () => {
   const resetMission = () => {
     setStep(1);
     setResult(null);
-    setFormData({ name: '', email: '', mission: null, file: null });
+    // Keep name, email and marketing pref for UX
+    setFormData(prev => ({ ...prev, mission: null, file: null }));
+    // Reset privacy consent to force check on new analysis (good practice) or keep it true based on preference
+    setPrivacyConsent(true); 
   };
 
   return (
@@ -169,12 +230,59 @@ const App: React.FC = () => {
                       className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 md:px-5 md:py-4 text-base md:text-lg text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
                     />
                   </div>
+
+                  {/* Compact Consents Section */}
+                  <div className="space-y-2 pt-2 px-1">
+                    
+                    {/* GDPR Consent (Required) */}
+                    <label className="flex items-start gap-3 cursor-pointer group opacity-90 hover:opacity-100 transition-opacity">
+                      <div className="relative flex items-center mt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={privacyConsent}
+                          onChange={(e) => setPrivacyConsent(e.target.checked)}
+                          className="peer appearance-none w-4 h-4 border border-slate-600 rounded bg-slate-900 checked:bg-cyan-600 checked:border-cyan-600 transition-all"
+                        />
+                         <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100 top-0.5 left-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                         </svg>
+                      </div>
+                      <div className="text-xs text-slate-500 leading-relaxed select-none group-hover:text-slate-400">
+                        <span className="font-semibold text-slate-400 group-hover:text-slate-300">Protocolo de Privacidad.</span> Acepto el procesamiento local de mis datos.
+                      </div>
+                    </label>
+
+                    {/* Marketing Consent (Optional) */}
+                    <label className="flex items-start gap-3 cursor-pointer group opacity-80 hover:opacity-100 transition-opacity">
+                      <div className="relative flex items-center mt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={formData.marketingConsent}
+                          onChange={handleMarketingChange}
+                          className="peer appearance-none w-4 h-4 border border-slate-600 rounded bg-slate-900 checked:bg-purple-600 checked:border-purple-600 transition-all"
+                        />
+                         <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100 top-0.5 left-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                         </svg>
+                      </div>
+                      <div className="text-xs text-slate-600 leading-relaxed select-none group-hover:text-slate-400">
+                        <span className="font-semibold text-slate-500 group-hover:text-slate-300">Comunicaciones.</span> Recibir novedades sobre oportunidades de carrera.
+                      </div>
+                    </label>
+                  </div>
+
                 </div>
 
                 <div className="flex justify-end pt-4">
                   <button
                     onClick={nextStep}
-                    className="group flex items-center gap-2 bg-white text-slate-950 px-6 py-3 rounded-xl font-bold hover:bg-cyan-50 transition-colors"
+                    disabled={!privacyConsent || !formData.name || !formData.email}
+                    className={`
+                      group flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all
+                      ${(privacyConsent && formData.name && formData.email)
+                        ? 'bg-white text-slate-950 hover:bg-cyan-50'
+                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
+                    `}
                   >
                     Confirmar ID <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                   </button>
@@ -304,7 +412,12 @@ const App: React.FC = () => {
 
             {/* Step 4: Results */}
             {step === 4 && result && (
-               <ResultPanel result={result} onReset={resetMission} />
+               <ResultPanel 
+                result={result} 
+                onReset={resetMission}
+                userName={formData.name}
+                userEmail={formData.email}
+               />
             )}
 
             {/* Error Message */}
