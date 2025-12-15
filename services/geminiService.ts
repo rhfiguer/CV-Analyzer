@@ -51,24 +51,31 @@ export const analyzeCV = async (
       }),
     });
 
-    // 3. Handle Errors
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      
-      // Handle HTML/404 errors (Vercel specific)
-      if (response.status === 404) {
-        throw new Error("Error de conexión: No se encuentra el endpoint /api/analyze. Asegúrate de usar 'vercel dev'.");
-      }
-      
-      throw new Error(errorData.error || `Error del servidor: ${response.status}`);
+    // 3. Robust Error Handling
+    const contentType = response.headers.get("content-type");
+    
+    // Si la respuesta no es JSON (ej: es HTML de error 404 o 500 de Vercel por defecto)
+    if (!contentType || !contentType.includes("application/json")) {
+       const text = await response.text();
+       console.error("Respuesta no válida del servidor:", text.substring(0, 200));
+       
+       if (response.status === 404) {
+         throw new Error("ERROR DE CONEXIÓN: El endpoint /api/analyze no está disponible. Si estás en local, asegúrate de usar 'vercel dev' para que funcionen las API routes.");
+       }
+       throw new Error(`Error del servidor (${response.status}). Verifica los logs de Vercel.`);
     }
 
-    // 4. Return JSON Result
     const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || `Error desconocido del servidor: ${response.status}`);
+    }
+
     return result as AnalysisResult;
 
   } catch (error: any) {
     console.error("Error en la misión de análisis:", error);
+    // Propagar el mensaje exacto para mostrarlo en la UI
     throw error;
   }
 };
