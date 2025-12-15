@@ -92,6 +92,40 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     }
   };
 
+  // SMART GRID LOGIC
+  // Calculamos la mejor distribución basada en la cantidad de items para evitar huérfanos
+  const stepCount = result.plan_de_vuelo.length;
+  
+  let gridColsClass = "";
+  let showLine = true;
+
+  if (stepCount === 6) {
+    // 6 items: 3 columnas (2 filas perfectas de 3)
+    // Ocultamos la línea porque en 2 filas se ve extraña cortando solo la primera
+    gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
+    showLine = false; 
+  } else if (stepCount === 5) {
+    // 5 items: Estándar de 5 columnas
+    gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-5";
+    showLine = true;
+  } else if (stepCount === 4) {
+    // 4 items: 4 columnas
+    gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
+    showLine = true;
+  } else if (stepCount === 3) {
+    // 3 items: 3 columnas
+    gridColsClass = "grid-cols-1 md:grid-cols-3";
+    showLine = true;
+  } else if (stepCount === 2) {
+    // 2 items: 2 columnas centradas
+    gridColsClass = "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto";
+    showLine = true;
+  } else {
+    // Fallback (> 6 o 1): Grid generica
+    gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-4";
+    showLine = false;
+  }
+
   return (
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
       {/* Header Stats */}
@@ -159,13 +193,16 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 relative overflow-hidden">
         <h3 className="text-lg font-bold text-white mb-8 uppercase tracking-widest text-center relative z-10">Plan de Vuelo Sugerido</h3>
         
-        {/* Container relativo para posicionar la línea */}
+        {/* Container relativo para posicionar la línea y el grid */}
         <div className="relative">
-             {/* Connecting Line (Desktop) */}
-             <div className="hidden md:block absolute top-8 left-[10%] right-[10%] h-0.5 bg-slate-700/50 -z-0"></div>
+             
+             {/* Connecting Line (Only visible on MD+ and if showLine is true) */}
+             {showLine && (
+                <div className="hidden lg:block absolute top-8 left-[10%] right-[10%] h-0.5 bg-slate-700/50 -z-0"></div>
+             )}
 
-             {/* CSS GRID para distribución exacta */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 relative z-10">
+             {/* Smart Grid Distribution */}
+            <div className={`grid gap-4 relative z-10 ${gridColsClass}`}>
                 {result.plan_de_vuelo.map((step, idx) => {
                     const { title, body } = parseStepContent(step);
                     return (
