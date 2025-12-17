@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock, Loader2 } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock, Loader2, ArrowRight, Fingerprint } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
@@ -54,37 +54,53 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const [session, setSession] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
+  // AUTO-REDIRECT STATE
+  const [showRedirectModal, setShowRedirectModal] = useState(false);
+
   // 1. Efecto para detectar sesión y cambios de Auth
   useEffect(() => {
     if (!supabase) return; // Modo Demo
 
-    // Obtener sesión inicial
+    // Obtener sesión inicial (Check silencioso al cargar página)
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
-      checkPremiumStatus(session);
+      if (session) checkPremiumStatus(session);
     });
 
-    // Suscribirse a cambios (Login exitoso, Logout, etc.)
+    // Suscribirse a cambios (Login exitoso desde Magic Link, Logout, etc.)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+    } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setSession(session);
-      checkPremiumStatus(session);
       
-      // Si el modal estaba abierto y el usuario se loguea, cerramos modal y procedemos
-      if (session && isLoginModalOpen) {
-         setIsLoginModalOpen(false);
-         // Opcional: Auto-trigger checkout? Mejor dejar que el usuario haga click de nuevo 
-         // o llamar handleUnlock automáticamente si queremos ser agresivos.
-         // Por UX, mejor cerrar modal y dejar que el usuario vea que ya está logueado.
+      // LOGIC: Auto-Redirect Flow
+      // Si detectamos un inicio de sesión explícito (SIGNED_IN)
+      if (event === 'SIGNED_IN' && session) {
+          console.log(">> AUTH EVENT: Usuario autenticado. Verificando estado...");
+          
+          // Cerramos modal de login si estaba abierto
+          setIsLoginModalOpen(false);
+
+          // Verificamos si YA pagó
+          const isAlreadyPremium = await checkPremiumStatus(session);
+          
+          // SI NO es premium, asumimos que acaba de loguearse para pagar -> AUTO REDIRECT
+          if (!isAlreadyPremium) {
+              console.log(">> PAGO PENDIENTE: Iniciando secuencia de auto-redirección...");
+              triggerAutoRedirect(session.user.email);
+          }
+      } else {
+          // Para otros eventos (refresh token, etc), solo chequeamos status
+          if (session) checkPremiumStatus(session);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [isLoginModalOpen]);
+  }, []);
 
   // Helper para verificar si el usuario ya es premium (desde DB Profile)
-  const checkPremiumStatus = async (currentSession: any) => {
+  // Modificado para retornar boolean para uso inmediato
+  const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
     if (currentSession?.user) {
         // Consultar perfil para ver si ya pagó
         const { data, error } = await supabase
@@ -95,8 +111,18 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         
         if (data && data.is_premium) {
             setIsPremiumUnlocked(true);
+            return true;
         }
     }
+    return false;
+  };
+
+  const triggerAutoRedirect = (email: string) => {
+      setShowRedirectModal(true);
+      // Esperar 3 segundos para que el usuario lea el mensaje y luego ir al checkout
+      setTimeout(() => {
+          proceedToCheckout(email);
+      }, 3000);
   };
 
   // 2. Lógica del Botón Desbloquear
@@ -125,10 +151,12 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     proceedToCheckout(session.user.email);
   };
 
-  const proceedToCheckout = (email: string) => {
+  const proceedToCheckout = (email?: string) => {
+      // Usar email de sesión o el prop por defecto
+      const targetEmail = email || session?.user?.email || userEmail;
+      
       // Construir URL de Lemon Squeezy con email pre-rellenado
-      // Documentación: https://docs.lemonsqueezy.com/help/checkout/prefilling-checkout-fields
-      const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${encodeURIComponent(email)}`;
+      const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${encodeURIComponent(targetEmail)}`;
       
       console.log("Redirigiendo a pasarela de pago...", checkoutUrl);
       window.location.href = checkoutUrl;
@@ -208,6 +236,37 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
          onSuccess={() => {}} // Manejado por onAuthStateChange
          prefilledEmail={userEmail} // Usamos el email del form inicial
       />
+
+      {/* --- AUTO-REDIRECT MODAL (NEW) --- */}
+      {showRedirectModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+           <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" />
+           
+           <div className="relative bg-slate-900 border border-cyan-500/50 rounded-2xl p-8 max-w-md w-full shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center animate-[fadeIn_0.5s_ease-out]">
+              
+              <div className="flex justify-center mb-6 relative">
+                 <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full animate-pulse"></div>
+                 <Fingerprint size={64} className="text-cyan-400 relative z-10" />
+              </div>
+
+              <h2 className="text-2xl font-bold text-white mb-2">Identidad Confirmada</h2>
+              <p className="text-slate-400 mb-6">
+                Bienvenido de vuelta, Comandante. Estableciendo enlace seguro con la plataforma de pago...
+              </p>
+
+              <div className="w-full bg-slate-800 h-1.5 rounded-full mb-6 overflow-hidden">
+                 <div className="h-full bg-cyan-400 animate-[progress_3s_ease-in-out_forwards] w-full origin-left"></div>
+              </div>
+
+              <button 
+                onClick={() => proceedToCheckout()}
+                className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                 Ir al Pago Ahora <ArrowRight size={18} />
+              </button>
+           </div>
+        </div>
+      )}
 
       {/* Header Stats - SIEMPRE VISIBLE (GANCHO) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
