@@ -2,15 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import { MissionId } from '../types';
 
 /**
- * CONFIGURACIÓN DE SUPABASE (OPCIONAL)
+ * CONFIGURACIÓN DE SUPABASE
  * 
- * Para habilitar el guardado de leads, necesitas configurar estas variables en tu archivo .env.local
- * o en las variables de entorno de Vercel:
- * 
- * VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
- * VITE_SUPABASE_ANON_KEY=tu-anon-key-publica
- * 
- * Si no las configuras, la app funcionará en "Modo Demo" y solo imprimirá los datos en consola.
+ * VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY deben estar en .env.local o Vercel.
  */
 
 const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || '';
@@ -21,12 +15,13 @@ let supabase: any = null;
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
   try {
     supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log("Supabase conectado correctamente.");
+    // Log discreto de inicialización
+    console.debug("🔌 Supabase Client: Inicializado.");
   } catch (e) {
-    console.error("Fallo al inicializar Supabase:", e);
+    console.error("❌ Fallo al inicializar cliente Supabase:", e);
   }
 } else {
-  console.log("Modo Local: Supabase no configurado. Los datos se mostrarán en consola.");
+  console.warn("⚠️ Supabase NO configurado. La app está en modo DEMO (sin base de datos real).");
 }
 
 export const saveLead = async (
@@ -35,31 +30,50 @@ export const saveLead = async (
   marketingConsent: boolean,
   missionId?: MissionId | null
 ) => {
-  // Si no hay cliente, simulamos el éxito
+  const timestamp = new Date().toISOString();
+
+  // 1. MODO DEMO (Sin credenciales)
   if (!supabase) {
-    console.log(`[MOCK DB] Guardando lead: ${name} (${email}) - Misión: ${missionId || 'N/A'}`);
+    console.groupCollapsed('%c 🚧 MOCK DB: Guardado Simulado', 'color: orange; font-weight: bold; background: #222; padding: 2px 4px; border-radius: 2px;');
+    console.log(`Usuario: ${name}`);
+    console.log(`Email: ${email}`);
+    console.log(`Misión: ${missionId || 'Pendiente'}`);
+    console.log("Estado: NO SE GUARDÓ EN NUBE (Faltan API Keys)");
+    console.groupEnd();
     return;
   }
 
+  // 2. MODO PRODUCCIÓN (Intento de guardado real)
+  console.group('%c 🛰️ DB UPLINK: Guardando Lead...', 'color: #06b6d4; font-weight: bold;'); // Cyan color
+  
   try {
-    const { error } = await supabase
-      .from('leads')
+    const { data, error } = await supabase
+      .from('cosmic_cv_leads') // Tabla específica
       .insert([
         { 
           name, 
           email, 
           marketing_consent: marketingConsent,
           mission_id: missionId || null,
-          created_at: new Date().toISOString()
+          created_at: timestamp
         },
-      ]);
+      ])
+      .select(); // Pedimos que nos devuelva el registro creado para confirmar ID
 
     if (error) {
-      console.warn("Error guardando en Supabase (no crítico):", error.message);
+      console.error('%c ❌ ERROR AL GUARDAR EN SUPABASE ', 'background: red; color: white; font-weight: bold; padding: 2px 4px;');
+      console.error("Mensaje:", error.message);
+      console.error("Detalles:", error.details || error.hint || 'N/A');
     } else {
-      console.log("Lead guardado exitosamente en base de datos.");
+      console.log('%c ✅ GUARDADO EXITOSO ', 'background: #22c55e; color: black; font-weight: bold; padding: 2px 4px;');
+      console.log("Tabla: cosmic_cv_leads");
+      console.log("ID Registro:", data?.[0]?.id);
+      console.log("Datos:", { name, email, missionId });
     }
   } catch (err) {
-    console.warn("Error de conexión con Supabase:", err);
+    console.error('%c 💥 ERROR DE CONEXIÓN CRÍTICO ', 'background: red; color: white; font-weight: bold;');
+    console.error(err);
+  } finally {
+    console.groupEnd();
   }
 };
