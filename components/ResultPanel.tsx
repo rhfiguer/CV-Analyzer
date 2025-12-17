@@ -149,23 +149,45 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </p>
       </div>
 
-      {/* Grid: Strengths & Weaknesses - DEBILIDADES BLOQUEADAS */}
+      {/* Grid: Strengths & Weaknesses */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Puntos Fuertes - VISIBLE */}
-        <div className="bg-slate-900/40 rounded-xl p-5 border border-green-900/50">
-          <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2">
+        
+        {/* Puntos Fuertes - PARCIALMENTE VISIBLE (TEASER) */}
+        <div className="relative bg-slate-900/40 rounded-xl p-5 border border-green-900/50 overflow-hidden group">
+          <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2 relative z-10">
             <ShieldCheck size={18} /> Propulsores Activos
           </h4>
-          <ul className="space-y-2">
-            {result.puntos_fuertes.map((point, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-slate-300 text-sm">
-                <span className="text-green-500 mt-1">✓</span> {point}
-              </li>
-            ))}
+          <ul className="space-y-2 relative z-0">
+            {result.puntos_fuertes.map((point, idx) => {
+               // Lógica de bloqueo: Si no es premium, solo mostramos los 2 primeros
+               const isLocked = !isPremiumUnlocked && idx >= 2;
+
+               return (
+                  <li key={idx} className={`flex items-start gap-2 text-sm transition-all duration-500 ${isLocked ? 'blur-sm select-none opacity-40 grayscale' : 'text-slate-300'}`}>
+                    <span className={`${isLocked ? 'text-slate-600' : 'text-green-500'} mt-1`}>
+                       {isLocked ? <Lock size={14}/> : '✓'}
+                    </span>
+                    {/* Si está bloqueado, ponemos texto placeholder para que el blur se vea realista pero no revele info */}
+                    {isLocked ? "Análisis de competencia estratégica encriptado." : point}
+                  </li>
+               );
+            })}
           </ul>
+
+          {/* OVERLAY DE BLOQUEO (STRENGTHS) - Solo si hay items ocultos */}
+          {!isPremiumUnlocked && result.puntos_fuertes.length > 2 && (
+             <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent flex items-end justify-center pb-6 z-20">
+                 <div className="bg-green-950/90 border border-green-500/30 px-3 py-1.5 rounded-full flex items-center gap-2 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
+                    <Lock size={12} className="text-green-400" />
+                    <span className="text-[10px] text-green-300 font-bold tracking-wide uppercase">
+                       +{result.puntos_fuertes.length - 2} Propulsores Clasificados
+                    </span>
+                 </div>
+             </div>
+          )}
         </div>
 
-        {/* Brechas Críticas - BLOQUEADO SI ES FREE */}
+        {/* Brechas Críticas - TOTALMENTE BLOQUEADO SI ES FREE */}
         <div className="relative bg-slate-900/40 rounded-xl p-5 border border-red-900/50 overflow-hidden group">
           
           <h4 className="text-red-400 font-bold mb-4 flex items-center gap-2 relative z-10">
