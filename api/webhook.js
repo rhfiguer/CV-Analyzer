@@ -20,93 +20,81 @@ export default async function handler(req, res) {
 
   try {
     if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET || !supabaseUrl || !supabaseServiceRoleKey) {
-      console.error("SERVER ERROR: Faltan variables de entorno críticas.");
+      console.error("CRITICAL: Missing Env Vars (LS Secret or SB Keys)");
       return res.status(500).json({ error: 'Server misconfiguration' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
     const rawBody = await getRawBody(req);
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+    
+    // Verificación de Firma
     const hmac = crypto.createHmac('sha256', secret);
     const digest = Buffer.from(hmac.update(rawBody).digest('hex'), 'utf8');
     const signature = Buffer.from(req.headers['x-signature'] || '', 'utf8');
 
     if (!crypto.timingSafeEqual(digest, signature)) {
-      console.error("ALERTA DE SEGURIDAD: Firma de webhook inválida.");
+      console.error("AUTH ERROR: Invalid Webhook Signature");
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
     const payload = JSON.parse(rawBody.toString());
-    const { meta, data } = payload;
-    const eventName = meta.event_name;
+    const eventName = payload.meta.event_name;
+    const attributes = payload.data.attributes;
 
-    console.log(`Webhook recibido: ${eventName}`);
+    // NORMALIZACIÓN RADICAL DE EMAIL
+    const userEmail = attributes.user_email.toLowerCase().trim();
+    const status = attributes.status;
 
-    const allowedEvents = [
-      'subscription_created',
-      'subscription_updated',
-      'subscription_resumed',
-      'subscription_cancelled',
-      'subscription_expired',
-      'order_created' // A veces pagos únicos vienen como order_created
-    ];
+    console.log(`[LS WEBHOOK] Evento: ${eventName} | Email: ${userEmail} | Status: ${status}`);
 
-    if (!allowedEvents.includes(eventName)) {
+    // Determinamos si es un evento de "Activación"
+    const isActivation = [
+      'order_created', 
+      'subscription_created', 
+      'subscription_updated'
+    ].includes(eventName);
+
+    if (!isActivation) {
       return res.status(200).json({ message: 'Event ignored' });
     }
 
-    const attributes = data.attributes;
-    // NORMALIZACIÓN DE EMAIL (CRÍTICO)
-    const userEmail = attributes.user_email.toLowerCase().trim();
-    const variantId = attributes.variant_id || attributes.first_order_item?.variant_id;
-    const customerId = attributes.customer_id;
-    const status = attributes.status; // status puede ser 'paid' en orders o 'active' en subs
-    const renewsAt = attributes.renews_at;
+    // El estado 'paid' es para órdenes únicas, 'active' o 'on_trial' para suscripciones
+    const isPremium = ['paid', 'active', 'on_trial'].includes(status);
 
-    let isPremium = false;
-    
-    // Lógica para Subscripciones
-    if (['subscription_created', 'subscription_updated', 'subscription_resumed'].includes(eventName)) {
-        if (status === 'active' || status === 'on_trial') {
-            isPremium = true;
-        }
-    }
-    // Lógica para Pagos Únicos (Lifetime deals)
-    if (eventName === 'order_created' && status === 'paid') {
-        isPremium = true;
-    }
+    if (isPremium) {
+      console.log(`[LS WEBHOOK] Intentando actualizar perfil para: ${userEmail}`);
+      
+      // Intentamos actualizar usando ILIKE (Case Insensitive) para mayor seguridad
+      // Y pedimos que nos devuelva el registro para confirmar
+      const { data, error, count } = await supabase
+        .from('profiles')
+        .update({
+          is_premium: true,
+          lemon_status: status,
+          updated_at: new Date().toISOString()
+        }, { count: 'exact' })
+        .ilike('email', userEmail); // Búsqueda insensible a mayúsculas
 
-    console.log(`Procesando usuario: ${userEmail} | Premium: ${isPremium}`);
+      if (error) {
+        console.error("[SB ERROR]:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
 
-    // Intentamos actualizar. Si el email no existe, no hará nada (update count 0).
-    // Esto es un problema si el usuario pagó pero no se logueó antes.
-    const { error: dbError, count } = await supabase
-      .from('profiles')
-      .update({
-        is_premium: isPremium,
-        lemon_customer_id: customerId ? String(customerId) : null,
-        lemon_variant_id: variantId ? String(variantId) : null,
-        lemon_status: status,
-        renews_at: renewsAt,
-        updated_at: new Date().toISOString()
-      })
-      .eq('email', userEmail); // Supabase ignora case sensitivity usualmente, pero mejor asegurarse
+      if (count === 0) {
+        console.warn(`[LS WEBHOOK] ⚠️ Email ${userEmail} no encontrado en 'profiles'. El usuario pagó antes de registrarse o hay un error de tabla.`);
+        // Nota: Si el usuario no existe, Lemon Squeezy reintentará el webhook más tarde 
+        // o el usuario activará el Polling en el front.
+        return res.status(404).json({ error: 'User profile not found yet' });
+      }
 
-    if (dbError) {
-      console.error("DB ERROR:", dbError);
-      return res.status(500).json({ error: 'Database update failed' });
-    }
-
-    // Si count es null (a veces pasa en Vercel Edge) o 0, el usuario no existe en profiles.
-    if (count === 0) {
-        console.warn(`⚠️ ALERTA: Pago recibido de ${userEmail} pero no existe perfil en DB.`);
-        // Aquí no podemos hacer mucho sin auth.users id, pero queda en el log.
+      console.log(`[LS WEBHOOK] ✅ ÉXITO: Perfil de ${userEmail} actualizado a PREMIUM.`);
     }
 
     return res.status(200).json({ success: true });
 
   } catch (error) {
-    console.error("WEBHOOK ERROR:", error);
+    console.error("[LS WEBHOOK FATAL]:", error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
