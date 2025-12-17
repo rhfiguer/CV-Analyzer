@@ -6,7 +6,7 @@ import { ResultPanel } from './components/ResultPanel';
 import { LandingPage } from './components/LandingPage';
 import { analyzeCV } from './services/geminiService';
 import { saveLead } from './services/supabase';
-import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket } from 'lucide-react';
+import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, Globe, ExternalLink } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 3; // Límite de seguridad para Vercel Serverless (4.5MB payload limit)
 const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -176,6 +176,25 @@ const App: React.FC = () => {
       <div className="fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/40 to-black/90 pointer-events-none"></div>
       <div className="fixed inset-0 z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
       
+      {/* COMMUNITY LINK - Fixed Top Left */}
+      <div className="fixed top-4 left-4 md:top-6 md:left-6 z-50 animate-[fadeIn_1s_ease-out]">
+        <a 
+          href="https://somosmaas.org" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="group flex items-center gap-3 px-4 py-2 bg-slate-950/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-slate-900/80 hover:border-cyan-500/50 transition-all duration-300 shadow-lg hover:shadow-[0_0_20px_rgba(6,182,212,0.15)]"
+        >
+          <div className="relative flex items-center justify-center">
+             <Globe size={16} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
+             <span className="absolute inset-0 rounded-full bg-cyan-400 opacity-0 group-hover:animate-ping group-hover:opacity-20"></span>
+          </div>
+          <span className="text-xs md:text-sm font-medium text-slate-300 group-hover:text-white tracking-wide">
+            Somos MAAS
+          </span>
+          <ExternalLink size={12} className="text-slate-500 group-hover:text-cyan-400 opacity-0 group-hover:opacity-100 -ml-2 group-hover:ml-0 transition-all duration-300" />
+        </a>
+      </div>
+
       {/* Main Container - Reduced py for compact landing */}
       <main className="container mx-auto px-4 py-6 md:py-10 relative z-10 min-h-screen flex flex-col items-center justify-center">
         
