@@ -60,6 +60,11 @@ export const analyzeCV = async (
       throw new Error("⌛ TIEMPO DE VUELO EXCEDIDO: La IA tardó demasiado en responder (Timeout). El archivo puede ser muy complejo o los servidores están saturados. Intenta con un PDF más simple.");
     }
 
+    // NUEVO: Manejo de Rate Limit (Quota Exceeded)
+    if (response.status === 429) {
+      throw new Error("🔥 MOTORES SOBRECALENTADOS: Has alcanzado el límite de velocidad de la IA gratuita. Por favor espera 30-60 segundos para enfriar los sistemas antes de intentar el siguiente despegue.");
+    }
+
     const contentType = response.headers.get("content-type");
     
     // Si la respuesta no es JSON (ej: es HTML de error 404 o 500 de Vercel por defecto)
@@ -95,6 +100,11 @@ export const analyzeCV = async (
       // Traducción a "Lenguaje Cósmico"
       if (cleanError.includes("overloaded") || cleanError.includes("503") || cleanError.includes("UNAVAILABLE")) {
           cleanError = "Sistemas de navegación saturados por alta demanda (Error 503). Por favor, espera 10 segundos e intenta el despegue nuevamente.";
+      }
+      
+      // Traducción de Quota si se nos pasó el status 429
+      if (cleanError.includes("Quota") || cleanError.includes("429")) {
+          cleanError = "Límite de combustible diario alcanzado (Quota Exceeded). Espera un momento.";
       }
 
       throw new Error(cleanError);

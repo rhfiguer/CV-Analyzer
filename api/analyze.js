@@ -13,7 +13,14 @@ async function generateWithRetry(params, retries = 3) {
     try {
       return await ai.models.generateContent(params);
     } catch (error) {
-      // Detectar errores de sobrecarga o servidor no disponible
+      // 1. Detección de Cuota Excedida (Rate Limit)
+      // Si es cuota, NO reintentamos (no tiene sentido martillear), fallamos rápido para avisar al usuario.
+      const isQuotaError = error.message?.includes('Quota exceeded') || error.status === 429;
+      if (isQuotaError) {
+        throw error; // Lanzar inmediatamente para que el handler principal lo capture
+      }
+
+      // 2. Detección de Sobrecarga Temporal (503)
       const isOverloaded = 
         error.message?.includes('503') || 
         error.message?.includes('overloaded') || 
@@ -146,6 +153,12 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Error en /api/analyze:", error);
+    
+    // MANEJO ESPECÍFICO DE RATE LIMIT (429)
+    if (error.message?.includes('Quota exceeded') || error.status === 429) {
+        return res.status(429).json({ error: "Límite de cuota IA alcanzado. Motores en enfriamiento." });
+    }
+
     return res.status(500).json({ error: error.message || "Fallo crítico en el motor de análisis." });
   }
 }
