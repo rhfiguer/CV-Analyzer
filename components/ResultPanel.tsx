@@ -44,21 +44,24 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const [showRedirectModal, setShowRedirectModal] = useState(false);
   
   const pollingAttempts = useRef(0);
-  const maxPollingAttempts = 15;
+  const maxPollingAttempts = 10; // 30 segundos de espera total
 
   useEffect(() => {
     if (!supabase) return;
 
+    // 1. Cargar sesión inicial
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
       if (session) checkAndPoll(session);
     });
 
+    // 2. Escuchar cambios de sesión
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setSession(session);
       if (event === 'SIGNED_IN' && session) {
           setIsLoginModalOpen(false);
           const isPremium = await checkPremiumStatus(session);
+          // Si entra y no es premium, redirigimos suavemente al checkout
           if (!isPremium) triggerAutoRedirect(session.user.email);
       }
     });
@@ -91,45 +94,25 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       }
       setVerifyingPayment(true);
       const isPremium = await checkPremiumStatus(session);
-      await new Promise(r => setTimeout(r, 1200));
+      // Simular un escaneo de radar
+      await new Promise(r => setTimeout(r, 1500));
       setVerifyingPayment(false);
       
       if (!isPremium) {
-          alert(`Sistemas aún bloqueados. 
-          
-RECOMENDACIÓN TÁCTICA:
-1. Verifica que el correo usado en Lemon Squeezy sea EXACTAMENTE: ${session.user.email}
-2. Si hubo un error al escribirlo en la pasarela, contacta a soporte.
-3. El proceso puede tardar hasta 30 segundos en sincronizarse.`);
+          alert(`🛰️ Radar: El acceso Premium no ha sido detectado todavía.\n\nRecuerda usar el mismo email que en la compra: ${session.user.email}`);
       }
   };
 
   const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
-    if (currentSession?.user) {
+    if (currentSession?.user && supabase) {
         try {
-            // VERIFICACIÓN DUAL (Profiles y Leads como backup)
-            const { data: profile } = await supabase
+            const { data, error } = await supabase
                 .from('profiles')
                 .select('is_premium')
                 .eq('id', currentSession.user.id)
                 .single();
             
-            if (profile?.is_premium) {
-                setIsPremiumUnlocked(true);
-                return true;
-            }
-
-            // Si el perfil no lo tiene, chequeamos si el lead fue marcado (fallback de email)
-            const { data: lead } = await supabase
-                .from('cosmic_cv_leads')
-                .select('is_premium')
-                .ilike('email', currentSession.user.email)
-                .limit(1)
-                .maybeSingle();
-
-            if (lead?.is_premium) {
-                // Sincronizamos el perfil si el lead ya está pagado
-                await supabase.from('profiles').update({ is_premium: true }).eq('id', currentSession.user.id);
+            if (data?.is_premium) {
                 setIsPremiumUnlocked(true);
                 return true;
             }
@@ -142,16 +125,12 @@ RECOMENDACIÓN TÁCTICA:
 
   const triggerAutoRedirect = (email: string) => {
       setShowRedirectModal(true);
-      setTimeout(() => proceedToCheckout(email), 3000);
+      setTimeout(() => proceedToCheckout(email), 3500);
   };
 
   const handleUnlockClick = () => {
     setUnlocking(true);
     if (!session) {
-        if (!supabase) {
-            setTimeout(() => { setIsPremiumUnlocked(true); setUnlocking(false); }, 1500);
-            return;
-        }
         setIsLoginModalOpen(true);
         setUnlocking(false);
         return;
@@ -197,7 +176,7 @@ RECOMENDACIÓN TÁCTICA:
                  <Fingerprint size={64} className="text-cyan-400 relative z-10" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Identidad Confirmada</h2>
-              <p className="text-slate-400 mb-6">Redirigiendo a pasarela de pago segura...</p>
+              <p className="text-slate-400 mb-6">Redirigiendo a pasarela de pago para activar sistemas premium...</p>
               <button onClick={() => proceedToCheckout()} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl flex items-center justify-center gap-2">
                  Ir al Pago Ahora <ArrowRight size={18} />
               </button>
@@ -205,7 +184,7 @@ RECOMENDACIÓN TÁCTICA:
         </div>
       )}
 
-      {/* Stats */}
+      {/* Resumen de Rango */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700 p-6 rounded-2xl flex items-center justify-between">
           <div>
@@ -225,6 +204,7 @@ RECOMENDACIÓN TÁCTICA:
         </div>
       </div>
 
+      {/* Análisis Principal */}
       <div className="glass-panel p-6 rounded-2xl border-l-4 border-purple-500">
         <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
            <Navigation size={20} className="text-purple-400"/> Análisis de Trayectoria
@@ -232,6 +212,7 @@ RECOMENDACIÓN TÁCTICA:
         <p className="text-slate-300 leading-relaxed">{result.analisis_mision}</p>
       </div>
 
+      {/* Fortalezas y Brechas (con Blur si no es Premium) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="relative bg-slate-900/40 rounded-xl p-5 border border-green-900/50 overflow-hidden">
           <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2">
@@ -269,6 +250,7 @@ RECOMENDACIÓN TÁCTICA:
         </div>
       </div>
 
+      {/* Plan de Vuelo (Paso a Paso con Bloqueo) */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 relative overflow-hidden">
         <h3 className="text-lg font-bold text-white mb-8 uppercase tracking-widest text-center">Plan de Vuelo</h3>
         <div className={`grid gap-4 ${gridColsClass}`}>
@@ -288,11 +270,11 @@ RECOMENDACIÓN TÁCTICA:
         </div>
 
         {!isPremiumUnlocked && (
-            <div className="absolute inset-0 z-30 bg-gradient-to-t from-slate-950 via-slate-900/80 to-transparent flex flex-col items-center justify-center pt-10">
+            <div className="absolute inset-0 z-30 bg-gradient-to-t from-slate-950 via-slate-900/80 to-transparent flex flex-col items-center justify-center pt-10 px-6">
                 <button 
                     onClick={handleUnlockClick}
                     disabled={unlocking}
-                    className="px-8 py-4 bg-white text-slate-950 font-bold rounded-xl shadow-xl flex items-center gap-3 hover:scale-105 transition-transform"
+                    className="px-8 py-4 bg-white text-slate-950 hover:bg-cyan-50 text-sm md:text-base font-bold rounded-xl shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center gap-3 hover:scale-105 transition-transform"
                 >
                     {unlocking ? <Loader2 className="animate-spin" size={20} /> : <Unlock size={20} />}
                     DESBLOQUEAR REPORTE COMPLETO
@@ -305,10 +287,11 @@ RECOMENDACIÓN TÁCTICA:
         )}
       </div>
 
+      {/* Botones de Acción Final */}
       <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
         <button onClick={onReset} className="text-slate-400 hover:text-white transition-all text-sm">Iniciar Nueva Misión</button>
         {isPremiumUnlocked && (
-            <button onClick={handleSendEmail} disabled={emailStatus === 'sending' || emailStatus === 'sent'} className="px-8 py-3 bg-cyan-600 text-white font-bold rounded-full flex items-center gap-2">
+            <button onClick={handleSendEmail} disabled={emailStatus === 'sending' || emailStatus === 'sent'} className="px-8 py-3 bg-cyan-600 text-white font-bold rounded-full flex items-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)]">
                 {emailStatus === 'sending' ? <Loader2 className="animate-spin" size={18}/> : emailStatus === 'sent' ? <CheckCircle size={18}/> : <Mail size={18}/>}
                 {emailStatus === 'sent' ? 'Enviado' : 'Enviar a mi Email'}
             </button>
