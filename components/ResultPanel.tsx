@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock, Loader2, ArrowRight, Fingerprint } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock, Loader2, ArrowRight, Fingerprint, RefreshCw } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
@@ -9,10 +9,8 @@ import { LoginModal } from './LoginModal';
 
 // ------------------------------------------------------------------
 // CONFIGURACIÓN DE PAGO (LEMON SQUEEZY)
-// Reemplaza esta URL con la URL "Buy" de tu variante en Lemon Squeezy
 // ------------------------------------------------------------------
 const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
-// ^^^ EJEMPLO: Reemplazar con ID Real
 
 interface ResultPanelProps {
   result: AnalysisResult;
@@ -50,68 +48,124 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   
   // Auth & Premium State
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
-  const [unlocking, setUnlocking] = useState(false); // Loading state for unlock button
+  const [unlocking, setUnlocking] = useState(false); 
+  const [verifyingPayment, setVerifyingPayment] = useState(false); // New state for manual verification
   const [session, setSession] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   // AUTO-REDIRECT STATE
   const [showRedirectModal, setShowRedirectModal] = useState(false);
+  
+  // Polling Ref
+  const pollingAttempts = useRef(0);
+  const maxPollingAttempts = 10; // 10 attempts * 3 seconds = 30 seconds of active checking
 
   // 1. Efecto para detectar sesión y cambios de Auth
   useEffect(() => {
     if (!supabase) return; // Modo Demo
 
-    // Obtener sesión inicial (Check silencioso al cargar página)
+    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
-      if (session) checkPremiumStatus(session);
+      if (session) {
+          initiatePremiumCheck(session);
+      }
     });
 
-    // Suscribirse a cambios (Login exitoso desde Magic Link, Logout, etc.)
+    // Suscribirse a cambios
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setSession(session);
       
-      // LOGIC: Auto-Redirect Flow
-      // Si detectamos un inicio de sesión explícito (SIGNED_IN)
       if (event === 'SIGNED_IN' && session) {
           console.log(">> AUTH EVENT: Usuario autenticado. Verificando estado...");
-          
-          // Cerramos modal de login si estaba abierto
           setIsLoginModalOpen(false);
-
-          // Verificamos si YA pagó
           const isAlreadyPremium = await checkPremiumStatus(session);
           
-          // SI NO es premium, asumimos que acaba de loguearse para pagar -> AUTO REDIRECT
           if (!isAlreadyPremium) {
               console.log(">> PAGO PENDIENTE: Iniciando secuencia de auto-redirección...");
               triggerAutoRedirect(session.user.email);
           }
-      } else {
-          // Para otros eventos (refresh token, etc), solo chequeamos status
-          if (session) checkPremiumStatus(session);
+      } else if (session) {
+          // Si la sesión existe pero refrescó, volvemos a chequear premium
+          // Esto ayuda cuando el usuario recarga la página
+          initiatePremiumCheck(session);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Helper para verificar si el usuario ya es premium (desde DB Profile)
-  // Modificado para retornar boolean para uso inmediato
+  // Función inteligente que verifica y si falla, inicia Polling (reintentos)
+  const initiatePremiumCheck = async (currentSession: any) => {
+      const isPremium = await checkPremiumStatus(currentSession);
+      if (!isPremium) {
+          // Si no es premium aún, puede ser que el webhook esté llegando. Iniciamos polling silencioso.
+          console.log("Estado Premium negativo. Iniciando vigilancia de señal de pago...");
+          startPolling(currentSession);
+      }
+  };
+
+  const startPolling = (currentSession: any) => {
+      pollingAttempts.current = 0;
+      const interval = setInterval(async () => {
+          pollingAttempts.current += 1;
+          console.log(`📡 Buscando confirmación de pago... Intento ${pollingAttempts.current}`);
+          
+          const isNowPremium = await checkPremiumStatus(currentSession);
+          
+          if (isNowPremium) {
+              console.log("✅ ¡PAGO CONFIRMADO! Desbloqueando sistemas.");
+              clearInterval(interval);
+          } else if (pollingAttempts.current >= maxPollingAttempts) {
+              console.log("🛑 Polling finalizado sin confirmación.");
+              clearInterval(interval);
+          }
+      }, 3000); // Check every 3 seconds
+  };
+
+  // Verificación Manual (Botón)
+  const handleManualVerification = async () => {
+      if (!session) return;
+      setVerifyingPayment(true);
+      
+      // Force refresh of session data just in case
+      await supabase.auth.refreshSession();
+      
+      const isPremium = await checkPremiumStatus(session);
+      
+      // Artificial delay for UX
+      await new Promise(r => setTimeout(r, 1000));
+      
+      setVerifyingPayment(false);
+      if (isPremium) {
+          // Success handled by checkPremiumStatus setting state
+      } else {
+          alert("Aún no hemos recibido la confirmación del banco estelar. Si ya pagaste, espera unos segundos más e intenta de nuevo.");
+      }
+  };
+
   const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
     if (currentSession?.user) {
-        // Consultar perfil para ver si ya pagó
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('is_premium')
-            .eq('id', currentSession.user.id)
-            .single();
-        
-        if (data && data.is_premium) {
-            setIsPremiumUnlocked(true);
-            return true;
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('is_premium')
+                .eq('id', currentSession.user.id)
+                .single();
+            
+            if (error) {
+                console.warn("Error consultando perfil:", error.message);
+                return false;
+            }
+
+            if (data && data.is_premium) {
+                setIsPremiumUnlocked(true);
+                return true;
+            }
+        } catch (e) {
+            console.error("Error crítico verificando premium:", e);
         }
     }
     return false;
@@ -119,156 +173,100 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
   const triggerAutoRedirect = (email: string) => {
       setShowRedirectModal(true);
-      // Esperar 3 segundos para que el usuario lea el mensaje y luego ir al checkout
       setTimeout(() => {
           proceedToCheckout(email);
       }, 3000);
   };
 
-  // 2. Lógica del Botón Desbloquear
   const handleUnlockClick = () => {
     setUnlocking(true);
-
-    // CASO A: No hay sesión (o Modo Demo sin Supabase)
     if (!session) {
         if (!supabase) {
-            // Fallback para modo demo local sin backend
-            console.warn("Modo Demo: Simulando desbloqueo...");
-            setTimeout(() => {
-                setIsPremiumUnlocked(true);
-                setUnlocking(false);
-            }, 1500);
+            setTimeout(() => { setIsPremiumUnlocked(true); setUnlocking(false); }, 1500);
             return;
         }
-        
-        // Abrir Modal de Login
         setIsLoginModalOpen(true);
         setUnlocking(false);
         return;
     }
-
-    // CASO B: Usuario Logueado -> Ir a Checkout
     proceedToCheckout(session.user.email);
   };
 
   const proceedToCheckout = (email?: string) => {
-      // Usar email de sesión o el prop por defecto
       const targetEmail = email || session?.user?.email || userEmail;
-      
-      // Construir URL de Lemon Squeezy con email pre-rellenado
+      // Añadimos payment_success para detectar el retorno si Lemon lo soporta en redirect
       const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${encodeURIComponent(targetEmail)}`;
-      
-      console.log("Redirigiendo a pasarela de pago...", checkoutUrl);
       window.location.href = checkoutUrl;
   };
 
-  // 3. Lógica de Envío de Email (Existente)
   const handleSendEmail = async () => {
     if (emailStatus === 'sending') return;
-    
     setEmailStatus('sending');
     await new Promise(resolve => setTimeout(resolve, 50));
-
     try {
-      console.log("Generating PDF...");
       const doc = generateMissionReport(result, userName, userEmail);
       const missionTitle = MISSIONS.find(m => m.id === missionId)?.title;
-      
-      console.log("Sending email request...");
       const emailPromise = sendEmailReport(doc, userEmail, userName, missionTitle);
       const timeoutPromise = new Promise<{ success: boolean, error: string, id?: string }>((_, reject) => 
         setTimeout(() => reject(new Error("Tiempo de espera agotado (Timeout)")), 20000)
       );
-
       const response = await Promise.race([emailPromise, timeoutPromise]);
-
       if (response.success) {
         setEmailStatus('sent');
         if (response.id) setTransmissionId(response.id);
       } else {
         throw new Error(response.error);
       }
-      
     } catch (error: any) {
-      console.error("Transmission failed, initiating manual override:", error);
+      console.error("Transmission failed:", error);
       try {
         const doc = generateMissionReport(result, userName, userEmail);
         doc.save(`Mision_Cosmica_${userName.replace(/\s+/g, '_')}.pdf`);
-      } catch (pdfError) {
-        console.error("Local save failed too:", pdfError);
-      }
+      } catch (pdfError) {}
       setEmailStatus('error'); 
     }
   };
 
-  // SMART GRID LOGIC
   const stepCount = result.plan_de_vuelo.length;
   let gridColsClass = "";
   let showLine = true;
-
-  if (stepCount === 6) {
-    gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
-    showLine = false; 
-  } else if (stepCount === 5) {
-    gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-5";
-    showLine = true;
-  } else if (stepCount === 4) {
-    gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
-    showLine = true;
-  } else if (stepCount === 3) {
-    gridColsClass = "grid-cols-1 md:grid-cols-3";
-    showLine = true;
-  } else if (stepCount === 2) {
-    gridColsClass = "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto";
-    showLine = true;
-  } else {
-    gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-4";
-    showLine = false;
-  }
+  if (stepCount === 6) { gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"; showLine = false; } 
+  else if (stepCount === 5) { gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-5"; showLine = true; } 
+  else if (stepCount === 4) { gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"; showLine = true; } 
+  else if (stepCount === 3) { gridColsClass = "grid-cols-1 md:grid-cols-3"; showLine = true; } 
+  else if (stepCount === 2) { gridColsClass = "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto"; showLine = true; } 
+  else { gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-4"; showLine = false; }
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
-      
-      {/* Login Modal Integration */}
       <LoginModal 
          isOpen={isLoginModalOpen} 
          onClose={() => setIsLoginModalOpen(false)}
-         onSuccess={() => {}} // Manejado por onAuthStateChange
-         prefilledEmail={userEmail} // Usamos el email del form inicial
+         onSuccess={() => {}} 
+         prefilledEmail={userEmail} 
       />
 
-      {/* --- AUTO-REDIRECT MODAL (NEW) --- */}
       {showRedirectModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" />
-           
            <div className="relative bg-slate-900 border border-cyan-500/50 rounded-2xl p-8 max-w-md w-full shadow-[0_0_60px_rgba(6,182,212,0.2)] text-center animate-[fadeIn_0.5s_ease-out]">
-              
               <div className="flex justify-center mb-6 relative">
                  <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full animate-pulse"></div>
                  <Fingerprint size={64} className="text-cyan-400 relative z-10" />
               </div>
-
               <h2 className="text-2xl font-bold text-white mb-2">Identidad Confirmada</h2>
-              <p className="text-slate-400 mb-6">
-                Bienvenido de vuelta, Comandante. Estableciendo enlace seguro con la plataforma de pago...
-              </p>
-
+              <p className="text-slate-400 mb-6">Bienvenido de vuelta, Comandante. Estableciendo enlace seguro con la plataforma de pago...</p>
               <div className="w-full bg-slate-800 h-1.5 rounded-full mb-6 overflow-hidden">
                  <div className="h-full bg-cyan-400 animate-[progress_3s_ease-in-out_forwards] w-full origin-left"></div>
               </div>
-
-              <button 
-                onClick={() => proceedToCheckout()}
-                className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
+              <button onClick={() => proceedToCheckout()} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
                  Ir al Pago Ahora <ArrowRight size={18} />
               </button>
            </div>
         </div>
       )}
 
-      {/* Header Stats - SIEMPRE VISIBLE (GANCHO) */}
+      {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700 p-6 rounded-2xl flex items-center justify-between">
           <div>
@@ -290,7 +288,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Main Analysis - SIEMPRE VISIBLE */}
+      {/* Main Analysis */}
       <div className="glass-panel p-6 rounded-2xl border-l-4 border-purple-500">
         <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
            <Navigation size={20} className="text-purple-400"/> Análisis de Trayectoria
@@ -300,32 +298,25 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </p>
       </div>
 
-      {/* Grid: Strengths & Weaknesses */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
-        {/* Puntos Fuertes - PARCIALMENTE VISIBLE (TEASER) */}
+        {/* Puntos Fuertes */}
         <div className="relative bg-slate-900/40 rounded-xl p-5 border border-green-900/50 overflow-hidden group">
           <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2 relative z-10">
             <ShieldCheck size={18} /> Propulsores Activos
           </h4>
           <ul className="space-y-2 relative z-0">
             {result.puntos_fuertes.map((point, idx) => {
-               // Lógica de bloqueo: Si no es premium, solo mostramos los 2 primeros
                const isLocked = !isPremiumUnlocked && idx >= 2;
-
                return (
                   <li key={idx} className={`flex items-start gap-2 text-sm transition-all duration-500 ${isLocked ? 'blur-sm select-none opacity-40 grayscale' : 'text-slate-300'}`}>
                     <span className={`${isLocked ? 'text-slate-600' : 'text-green-500'} mt-1`}>
                        {isLocked ? <Lock size={14}/> : '✓'}
                     </span>
-                    {/* Si está bloqueado, ponemos texto placeholder para que el blur se vea realista pero no revele info */}
                     {isLocked ? "Análisis de competencia estratégica encriptado." : point}
                   </li>
                );
             })}
           </ul>
-
-          {/* OVERLAY DE BLOQUEO (STRENGTHS) - Solo si hay items ocultos */}
           {!isPremiumUnlocked && result.puntos_fuertes.length > 2 && (
              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent flex items-end justify-center pb-6 z-20">
                  <div className="bg-green-950/90 border border-green-500/30 px-3 py-1.5 rounded-full flex items-center gap-2 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
@@ -338,13 +329,11 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           )}
         </div>
 
-        {/* Brechas Críticas - TOTALMENTE BLOQUEADO SI ES FREE */}
+        {/* Brechas Críticas */}
         <div className="relative bg-slate-900/40 rounded-xl p-5 border border-red-900/50 overflow-hidden group">
-          
           <h4 className="text-red-400 font-bold mb-4 flex items-center gap-2 relative z-10">
             <AlertTriangle size={18} /> Fugas en el Casco
           </h4>
-          
           <div className={`space-y-2 relative z-0 ${!isPremiumUnlocked ? 'blur-sm select-none opacity-50 transition-all duration-700' : ''}`}>
             {result.brechas_criticas.map((point, idx) => (
               <li key={idx} className="flex items-start gap-2 text-slate-300 text-sm">
@@ -352,8 +341,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
               </li>
             ))}
           </div>
-
-          {/* OVERLAY DE BLOQUEO (WEAKNESSES) */}
           {!isPremiumUnlocked && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/60 backdrop-blur-[2px]">
                 <div className="bg-red-950/80 border border-red-500/50 p-3 rounded-lg flex items-center gap-3 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
@@ -368,22 +355,17 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Flight Plan - PASIALMENTE BLOQUEADO */}
+      {/* Flight Plan */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 relative overflow-hidden">
         <h3 className="text-lg font-bold text-white mb-8 uppercase tracking-widest text-center relative z-10">Plan de Vuelo Sugerido</h3>
-        
         <div className="relative">
-             
              {showLine && (
                 <div className="hidden lg:block absolute top-8 left-[10%] right-[10%] h-0.5 bg-slate-700/50 -z-0"></div>
              )}
-
             <div className={`grid gap-4 relative z-10 ${gridColsClass}`}>
                 {result.plan_de_vuelo.map((step, idx) => {
                     const { title, body } = parseStepContent(step);
-                    // Si no es premium, solo mostramos el primer paso claramente
                     const isLockedItem = !isPremiumUnlocked && idx > 0;
-
                     return (
                         <div key={idx} className={`
                             bg-slate-950 border p-4 rounded-xl flex flex-col items-center transition-all duration-300 h-full shadow-lg relative overflow-hidden
@@ -399,7 +381,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                             `}>
                                 {isLockedItem ? <Lock size={14}/> : idx + 1}
                             </div>
-                            
                             <div className="flex flex-col gap-2 w-full">
                                 {title && (
                                     <h4 className={`font-bold text-xs sm:text-sm text-center leading-tight ${isLockedItem ? 'text-slate-500' : 'text-cyan-300'}`}>
@@ -407,7 +388,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                                     </h4>
                                 )}
                                 <p className={`text-xs leading-relaxed ${title ? 'text-left' : 'text-center'} ${isLockedItem ? 'text-slate-600' : 'text-slate-300'}`}>
-                                    {isLockedItem ? 'Contenido táctico encriptado para su seguridad.' : body}
+                                    {isLockedItem ? 'Contenido táctico encriptado.' : body}
                                 </p>
                             </div>
                         </div>
@@ -415,7 +396,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                 })}
             </div>
 
-            {/* OVERLAY DE BLOQUEO (FLIGHT PLAN) */}
             {!isPremiumUnlocked && (
                 <div className="absolute inset-x-0 bottom-0 top-1/3 z-30 bg-gradient-to-t from-slate-950 via-slate-900/90 to-transparent flex flex-col items-center justify-center pt-10">
                     <button 
@@ -436,16 +416,29 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                              </>
                         )}
                     </button>
-                    <p className="text-slate-400 text-xs mt-3 flex items-center gap-1">
-                        <Star size={12} className="text-yellow-500" />
-                        Acceso Premium Instantáneo
-                    </p>
+                    
+                    {/* BOTÓN MANUAL DE VERIFICACIÓN (NUEVO) */}
+                    <div className="flex flex-col items-center mt-4 gap-2">
+                        <p className="text-slate-400 text-xs flex items-center gap-1">
+                            <Star size={12} className="text-yellow-500" />
+                            Acceso Premium Instantáneo
+                        </p>
+                        {session && (
+                            <button 
+                                onClick={handleManualVerification}
+                                disabled={verifyingPayment}
+                                className="text-xs text-cyan-400 hover:text-white underline flex items-center gap-1 transition-colors"
+                            >
+                                {verifyingPayment ? <Loader2 size={12} className="animate-spin"/> : <RefreshCw size={12} />}
+                                ¿Ya pagaste? Verificar estado manualmente
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
       </div>
 
-      {/* Action Buttons - SOLO VISIBLES SI ESTÁ DESBLOQUEADO O PARA RESETEAR */}
       <div className="flex flex-col md:flex-row justify-center items-center gap-4 pt-6">
         <button
           onClick={onReset}
@@ -495,11 +488,8 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         )}
       </div>
       
-      {/* SUCCESS & SPAM WARNING PANEL */}
       {emailStatus === 'sent' && isPremiumUnlocked && (
         <div className="mt-6 bg-slate-900/80 border border-green-500/30 rounded-xl p-5 animate-[fadeIn_0.5s_ease-out] shadow-lg">
-            
-            {/* Header: Success */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-green-500/20 rounded-full text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.3)]">
@@ -516,8 +506,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                     </div>
                 )}
             </div>
-
-            {/* Warning: Spam */}
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex items-start gap-4">
                 <div className="bg-amber-500/20 p-2 rounded-full shrink-0">
                     <AlertTriangle className="text-amber-400" size={20} />
