@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   try {
     const { email, name, pdfBase64, missionTitle } = req.body;
 
-    console.log(`[API START] Iniciando proceso de envío para: ${email}`);
+    console.log(`[API START] Iniciando proceso de envío. Destinatario encriptado.`);
 
     // Check Environment
     if (!process.env.RESEND_API_KEY) {
@@ -76,7 +76,7 @@ export default async function handler(req, res) {
       ],
     });
 
-    console.log("[API] Respuesta completa de Resend:", JSON.stringify(data, null, 2));
+    console.log("[API] Respuesta de Resend recibida.");
 
     if (data.error) {
         console.error("[API ERROR] Resend rechazó la solicitud:", data.error);

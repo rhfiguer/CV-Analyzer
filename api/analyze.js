@@ -81,7 +81,7 @@ export default async function handler(req, res) {
       required: ["nivel_actual", "probabilidad_exito", "analisis_mision", "puntos_fuertes", "brechas_criticas", "plan_de_vuelo"],
     };
 
-    console.log(`Iniciando análisis para ${name}...`);
+    console.log(`Iniciando análisis de perfil para misión ${missionId}...`);
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",

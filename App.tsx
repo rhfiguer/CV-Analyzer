@@ -117,7 +117,7 @@ const App: React.FC = () => {
       saveLead(formData.name, formData.email, formData.marketingConsent).catch(e => console.error("DB Error", e));
       
       if (formData.marketingConsent) {
-        console.log(">> MARKETING SIGNAL: Subscribing commander to frequency", formData.email);
+        console.log(">> MARKETING SIGNAL: Subscribing commander to frequency [SECURE CHANNEL]");
       }
     } else if (step === 2) {
        // Optional: Update lead with selected mission if desired

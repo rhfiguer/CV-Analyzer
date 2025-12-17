@@ -35,8 +35,9 @@ export const saveLead = async (
   // 1. MODO DEMO (Sin credenciales)
   if (!supabase) {
     console.groupCollapsed('%c 🚧 MOCK DB: Guardado Simulado', 'color: orange; font-weight: bold; background: #222; padding: 2px 4px; border-radius: 2px;');
-    console.log(`Usuario: ${name}`);
-    console.log(`Email: ${email}`);
+    // PII MASKING
+    console.log(`Usuario: ${name.charAt(0)}***`);
+    console.log(`Email: [HIDDEN]`);
     console.log(`Misión: ${missionId || 'Pendiente'}`);
     console.log("Estado: NO SE GUARDÓ EN NUBE (Faltan API Keys)");
     console.groupEnd();
@@ -63,12 +64,29 @@ export const saveLead = async (
     if (error) {
       console.error('%c ❌ ERROR AL GUARDAR EN SUPABASE ', 'background: red; color: white; font-weight: bold; padding: 2px 4px;');
       console.error("Mensaje:", error.message);
-      console.error("Detalles:", error.details || error.hint || 'N/A');
+      
+      // DIAGNÓSTICO INTELIGENTE DE RLS
+      if (error.message.includes("row-level security")) {
+        console.warn(`
+%c 🛡️ ALERTA DE SEGURIDAD (RLS) DETECTADA 🛡️
+Parece que la tabla 'cosmic_cv_leads' existe, pero no tiene una política que permita escribir datos públicos.
+        
+SOLUCIÓN: Ejecuta este SQL en tu panel de Supabase:
+---------------------------------------------------
+create policy "Permitir inserción pública cosmic leads"
+on public.cosmic_cv_leads
+for insert
+to anon
+with check (true);
+---------------------------------------------------
+        `, 'color: yellow; font-family: monospace;');
+      }
+
     } else {
       console.log('%c ✅ GUARDADO EXITOSO ', 'background: #22c55e; color: black; font-weight: bold; padding: 2px 4px;');
       console.log("Tabla: cosmic_cv_leads");
       console.log("ID Registro:", data?.[0]?.id);
-      console.log("Datos:", { name, email, missionId });
+      // No logueamos los datos crudos aquí para seguridad
     }
   } catch (err) {
     console.error('%c 💥 ERROR DE CONEXIÓN CRÍTICO ', 'background: red; color: white; font-weight: bold;');
