@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rocket, Sparkles, ChevronRight, CheckCircle2, ShieldCheck, Cpu, Zap } from 'lucide-react';
+import { Rocket, Sparkles, ChevronRight, CheckCircle2, ShieldCheck, Cpu, Zap, PlayCircle } from 'lucide-react';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -61,13 +61,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
       </div>
 
       {/* RIGHT COLUMN: Visual Mockup (Browser Window) */}
-      <div className="relative hidden lg:block perspective-1000 group">
+      {/* UX IMPROVEMENT: Added onClick handler and cursor-pointer to make the mockup interactive */}
+      <div 
+        onClick={onStart}
+        className="relative hidden lg:block perspective-1000 group cursor-pointer"
+        title="Clic para iniciar la aplicación"
+      >
         {/* Glow behind */}
-        <div className="absolute inset-0 bg-cyan-500/20 blur-[100px] rounded-full opacity-50"></div>
+        <div className="absolute inset-0 bg-cyan-500/20 blur-[100px] rounded-full opacity-50 group-hover:bg-cyan-500/30 transition-all duration-500"></div>
         
         {/* Browser Window Mockup */}
-        <div className="relative bg-slate-950/80 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transform rotate-y-[-5deg] rotate-x-[5deg] group-hover:rotate-0 transition-transform duration-700 ease-out">
+        <div className="relative bg-slate-950/80 backdrop-blur-xl border border-slate-700 group-hover:border-cyan-500/50 rounded-2xl shadow-2xl overflow-hidden transform rotate-y-[-5deg] rotate-x-[5deg] group-hover:rotate-0 group-hover:scale-[1.02] transition-all duration-500 ease-out">
           
+          {/* Interactive Overlay Hint */}
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all">
+             <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 bg-cyan-500 text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-cyan-500/50 flex items-center gap-2">
+                <PlayCircle size={20} />
+                ACCEDER AL SISTEMA
+             </div>
+          </div>
+
           {/* Browser Header */}
           <div className="bg-slate-900 border-b border-slate-800 p-4 flex items-center gap-4">
             <div className="flex gap-2">
@@ -75,7 +88,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
               <div className="w-3 h-3 rounded-full bg-yellow-500/50"></div>
               <div className="w-3 h-3 rounded-full bg-green-500/50"></div>
             </div>
-            <div className="bg-slate-800 rounded-md px-3 py-1 text-[10px] text-slate-500 font-mono flex-grow text-center">
+            <div className="bg-slate-800 rounded-md px-3 py-1 text-[10px] text-slate-500 font-mono flex-grow text-center group-hover:text-cyan-400 transition-colors">
               cosmic-cv-analyzer.app // v.2.0
             </div>
           </div>
@@ -91,16 +104,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
              <div className="space-y-4">
                 <div className="space-y-2">
                    <div className="h-3 w-20 bg-slate-700 rounded mx-1"></div>
-                   <div className="h-12 w-full bg-slate-900 border border-slate-700 rounded-xl flex items-center px-4">
-                      <span className="text-slate-600">Carlos...</span>
+                   <div className="h-12 w-full bg-slate-900 border border-slate-700 rounded-xl flex items-center px-4 group-hover:border-slate-600 transition-colors">
+                      <span className="text-slate-600 group-hover:text-slate-500">Carlos...</span>
+                      <span className="ml-auto w-0.5 h-5 bg-cyan-500 animate-pulse opacity-0 group-hover:opacity-100"></span>
                    </div>
                 </div>
                 <div className="space-y-2">
                    <div className="h-3 w-32 bg-slate-700 rounded mx-1"></div>
-                   <div className="h-12 w-full bg-slate-900 border border-slate-700 rounded-xl"></div>
+                   <div className="h-12 w-full bg-slate-900 border border-slate-700 rounded-xl group-hover:border-slate-600 transition-colors"></div>
                 </div>
                 <div className="pt-4 flex justify-end">
-                   <div className="h-10 w-32 bg-slate-800 rounded-xl"></div>
+                   <div className="h-10 w-32 bg-slate-800 rounded-xl group-hover:bg-cyan-900/30 transition-colors"></div>
                 </div>
              </div>
           </div>

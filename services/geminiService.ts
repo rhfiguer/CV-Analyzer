@@ -68,7 +68,28 @@ export const analyzeCV = async (
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(result.error || `Error desconocido del servidor: ${response.status}`);
+      // INTELIGENCIA DE ERRORES:
+      // Si el error viene como un JSON stringificado (como el de Gemini 503), lo limpiamos.
+      let cleanError = result.error || `Error desconocido del servidor: ${response.status}`;
+      
+      try {
+        // Intentamos detectar si es un JSON raw: {"error": {"code": 503 ...}}
+        if (typeof cleanError === 'string' && (cleanError.trim().startsWith('{') || cleanError.includes('"message":'))) {
+            const parsed = JSON.parse(cleanError);
+            // Extraer el mensaje profundo
+            if (parsed.error?.message) cleanError = parsed.error.message;
+            else if (parsed.message) cleanError = parsed.message;
+        }
+      } catch (e) {
+        // Si falla el parseo, usamos el string original
+      }
+
+      // Traducción a "Lenguaje Cósmico"
+      if (cleanError.includes("overloaded") || cleanError.includes("503") || cleanError.includes("UNAVAILABLE")) {
+          cleanError = "Sistemas de navegación saturados por alta demanda (Error 503). Por favor, espera 10 segundos e intenta el despegue nuevamente.";
+      }
+
+      throw new Error(cleanError);
     }
 
     // ---------------------------------------------------------

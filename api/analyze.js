@@ -4,6 +4,35 @@ import { GoogleGenAI, Type } from "@google/genai";
 // IMPORTANTE: Esta key debe configurarse en Vercel (Settings > Environment Variables) como API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+/**
+ * Función auxiliar para reintentar la generación de contenido en caso de saturación (503).
+ * Implementa backoff exponencial: espera 1s, luego 2s, luego 4s.
+ */
+async function generateWithRetry(params, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error) {
+      // Detectar errores de sobrecarga o servidor no disponible
+      const isOverloaded = 
+        error.message?.includes('503') || 
+        error.message?.includes('overloaded') || 
+        error.status === 503 ||
+        error.code === 503;
+
+      // Si es el último intento o no es error de carga, lanzamos el error
+      if (!isOverloaded || i === retries - 1) {
+        throw error;
+      }
+
+      // Esperar antes de reintentar
+      const delay = Math.pow(2, i) * 1000;
+      console.warn(`[Gemini Overload] Sistema saturado. Reintentando en ${delay}ms... (Intento ${i + 1}/${retries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export default async function handler(req, res) {
   // 1. Configuración CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -89,7 +118,8 @@ export default async function handler(req, res) {
 
     console.log(`Iniciando análisis de perfil para misión ${missionId}...`);
 
-    const response = await ai.models.generateContent({
+    // Usamos la función helper con retry
+    const response = await generateWithRetry({
       model: "gemini-2.5-flash",
       contents: {
         parts: [
