@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rocket, Sparkles, ChevronRight, CheckCircle2, ShieldCheck, Cpu, Zap, PlayCircle } from 'lucide-react';
+import { Rocket, Sparkles, ChevronRight, CheckCircle2, ShieldCheck, Cpu, Zap, PlayCircle, FileText } from 'lucide-react';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -60,76 +60,68 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
       </div>
 
-      {/* RIGHT COLUMN: Visual Mockup (Browser Window) */}
-      {/* UX IMPROVEMENT: Added onClick handler and cursor-pointer to make the mockup interactive */}
+      {/* RIGHT COLUMN: Interactive CV-Rocket Visual */}
       <div 
         onClick={onStart}
-        className="relative hidden lg:block perspective-1000 group cursor-pointer"
-        title="Clic para iniciar la aplicación"
+        className="relative hidden lg:flex items-center justify-center h-full min-h-[400px] cursor-pointer group perspective-1000"
+        title="Clic para despegar"
       >
-        {/* Glow behind */}
-        <div className="absolute inset-0 bg-cyan-500/20 blur-[100px] rounded-full opacity-50 group-hover:bg-cyan-500/30 transition-all duration-500"></div>
-        
-        {/* Browser Window Mockup */}
-        <div className="relative bg-slate-950/80 backdrop-blur-xl border border-slate-700 group-hover:border-cyan-500/50 rounded-2xl shadow-2xl overflow-hidden transform rotate-y-[-5deg] rotate-x-[5deg] group-hover:rotate-0 group-hover:scale-[1.02] transition-all duration-500 ease-out">
-          
-          {/* Interactive Overlay Hint */}
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-all">
-             <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 bg-cyan-500 text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-cyan-500/50 flex items-center gap-2">
-                <PlayCircle size={20} />
-                ACCEDER AL SISTEMA
-             </div>
-          </div>
+        {/* Ambient Glow */}
+        <div className="absolute inset-0 bg-green-500/10 blur-[80px] rounded-full opacity-40 group-hover:opacity-70 transition-all duration-700"></div>
 
-          {/* Browser Header */}
-          <div className="bg-slate-900 border-b border-slate-800 p-4 flex items-center gap-4">
-            <div className="flex gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500/50"></div>
-              <div className="w-3 h-3 rounded-full bg-yellow-500/50"></div>
-              <div className="w-3 h-3 rounded-full bg-green-500/50"></div>
-            </div>
-            <div className="bg-slate-800 rounded-md px-3 py-1 text-[10px] text-slate-500 font-mono flex-grow text-center group-hover:text-cyan-400 transition-colors">
-              cosmic-cv-analyzer.app // v.2.0
-            </div>
-          </div>
-
-          {/* Window Body (Mock UI) */}
-          <div className="p-8 space-y-6 opacity-90 select-none pointer-events-none">
-             <div className="text-center space-y-2 mb-8">
-                <div className="h-2 w-24 bg-cyan-900/50 rounded-full mx-auto"></div>
-                <h2 className="text-2xl font-bold text-white">Identificación del Piloto</h2>
-                <div className="h-2 w-64 bg-slate-800 rounded-full mx-auto"></div>
+        {/* The Composition */}
+        <div className="relative transform transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-6 group-hover:rotate-1">
+             
+             {/* Propulsion Flames (Behind) */}
+             <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 w-24 h-40 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100">
+                <div className="w-4 h-full bg-green-400 blur-lg animate-pulse"></div>
+                <div className="absolute top-0 w-12 h-24 bg-green-300 blur-md rounded-full opacity-80"></div>
+                <div className="absolute top-0 w-8 h-16 bg-white blur-sm rounded-full"></div>
              </div>
 
-             <div className="space-y-4">
-                <div className="space-y-2">
-                   <div className="h-3 w-20 bg-slate-700 rounded mx-1"></div>
-                   <div className="h-12 w-full bg-slate-900 border border-slate-700 rounded-xl flex items-center px-4 group-hover:border-slate-600 transition-colors">
-                      <span className="text-slate-600 group-hover:text-slate-500">Carlos...</span>
-                      <span className="ml-auto w-0.5 h-5 bg-cyan-500 animate-pulse opacity-0 group-hover:opacity-100"></span>
-                   </div>
-                </div>
-                <div className="space-y-2">
-                   <div className="h-3 w-32 bg-slate-700 rounded mx-1"></div>
-                   <div className="h-12 w-full bg-slate-900 border border-slate-700 rounded-xl group-hover:border-slate-600 transition-colors"></div>
-                </div>
-                <div className="pt-4 flex justify-end">
-                   <div className="h-10 w-32 bg-slate-800 rounded-xl group-hover:bg-cyan-900/30 transition-colors"></div>
-                </div>
-             </div>
-          </div>
+             {/* Rocket Fins (Left) */}
+             <div className="absolute bottom-8 -left-6 w-12 h-20 bg-slate-900 border-2 border-green-500/50 rounded-l-full origin-right transform -skew-y-12 group-hover:bg-green-900/20 transition-colors"></div>
+             {/* Rocket Fins (Right) */}
+             <div className="absolute bottom-8 -right-6 w-12 h-20 bg-slate-900 border-2 border-green-500/50 rounded-r-full origin-left transform skew-y-12 group-hover:bg-green-900/20 transition-colors"></div>
 
-          {/* Floating Element */}
-          <div className="absolute bottom-6 left-6 bg-slate-800/90 backdrop-blur border border-slate-600 p-3 rounded-lg shadow-xl flex items-center gap-3 animate-bounce">
-             <div className="bg-green-500/20 p-2 rounded-full text-green-400">
-                <CheckCircle2 size={16} />
+             {/* The CV Body (Main Hull) */}
+             <div className="relative w-56 h-72 bg-slate-950 border-2 border-green-500 rounded-2xl shadow-[0_0_30px_rgba(34,197,94,0.15)] group-hover:shadow-[0_0_50px_rgba(34,197,94,0.4)] transition-shadow flex flex-col items-center p-6 overflow-hidden z-10 backdrop-blur-md">
+                 
+                 {/* Internal Structure (Header) */}
+                 <div className="w-16 h-16 rounded-full border-2 border-green-500/30 flex items-center justify-center mb-6 bg-green-500/5">
+                    <FileText size={32} className="text-green-400" />
+                 </div>
+
+                 {/* Internal Structure (Lines) */}
+                 <div className="w-full space-y-3 opacity-80">
+                    <div className="h-2.5 bg-green-500/60 rounded-full w-full shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>
+                    <div className="h-2 bg-green-500/30 rounded-full w-3/4"></div>
+                    <div className="h-2 bg-green-500/30 rounded-full w-5/6"></div>
+                    <div className="h-2 bg-green-500/20 rounded-full w-full"></div>
+                    <div className="h-2 bg-green-500/10 rounded-full w-2/3 mt-4"></div>
+                 </div>
+
+                 {/* Holographic Scan Line */}
+                 <div className="absolute top-0 left-0 w-full h-1 bg-green-400 shadow-[0_0_10px_#4ade80] opacity-50 animate-[scan_3s_linear_infinite]"></div>
+                 
+                 {/* Status Text */}
+                 <div className="mt-auto pt-4">
+                    <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-green-900/30 border border-green-500/30">
+                       <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
+                       <span className="text-[10px] text-green-300 font-mono tracking-widest">SYSTEM READY</span>
+                    </div>
+                 </div>
              </div>
-             <div>
-                <p className="text-xs text-white font-bold">Sistema Online</p>
-                <p className="text-[10px] text-slate-400">Listo para analizar</p>
-             </div>
-          </div>
         </div>
+
+        {/* Floating CTA Hint */}
+        <div className="absolute bottom-10 animate-bounce transition-opacity duration-300">
+           <div className="flex flex-col items-center gap-2 group-hover:opacity-100 opacity-50">
+              <span className="text-green-400/80 text-xs font-bold tracking-[0.2em] uppercase">Click para Despegar</span>
+              <ChevronRight className="rotate-90 text-green-500" size={20} />
+           </div>
+        </div>
+
       </div>
 
     </div>
