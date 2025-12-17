@@ -65,6 +65,13 @@ export default async function handler(req, res) {
       El tono debe ser profesional pero con sutiles referencias espaciales/sci-fi.
       Refierete al usuario por su nombre: ${name}.
       Sé crítico pero motivador.
+
+      INSTRUCCIONES CRÍTICAS DE FORMATO (LONGITUD):
+      1. 'nivel_actual': DEBE ser un TÍTULO CORTO de rango (MÁXIMO 3 a 5 palabras). 
+         - Correcto: "Comandante Senior", "Estratega de Sistemas", "Cadete en Ascenso", "Veterano Táctico".
+         - Incorrecto: "El candidato presenta un perfil sólido con experiencia en..." (Esto va en análisis).
+      2. 'analisis_mision': Aquí debes incluir la descripción detallada, el resumen del perfil y la justificación del rango.
+      3. 'puntos_fuertes' y 'brechas_criticas': Items concisos y directos.
     `;
 
     // Schema de respuesta

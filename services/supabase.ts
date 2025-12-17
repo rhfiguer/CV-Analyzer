@@ -38,6 +38,7 @@ export const saveLead = async (
     // PII MASKING
     console.log(`Usuario: ${name.charAt(0)}***`);
     console.log(`Email: [HIDDEN]`);
+    console.log(`Marketing: ${marketingConsent ? 'SI' : 'NO'}`);
     console.log(`Misión: ${missionId || 'Pendiente'}`);
     console.log("Estado: NO SE GUARDÓ EN NUBE (Faltan API Keys)");
     console.groupEnd();
@@ -48,9 +49,8 @@ export const saveLead = async (
   console.group('%c 🛰️ DB UPLINK: Guardando Lead...', 'color: #06b6d4; font-weight: bold;'); // Cyan color
   
   try {
-    // CAMBIO CRÍTICO: Eliminamos .select()
-    // Al ser un formulario público, a menudo no tenemos permisos de SELECT (Lectura)
-    // por seguridad. Al quitar .select(), hacemos un "Fire and Forget" que es más robusto ante RLS.
+    // CAMBIO CRÍTICO: Eliminamos .select() para evitar conflictos de RLS
+    // Se mapea 'marketingConsent' (variable JS) a 'marketing_consent' (columna DB)
     const { error } = await supabase
       .from('cosmic_cv_leads')
       .insert([
@@ -91,6 +91,8 @@ with check (true);
       console.log('%c ✅ GUARDADO EXITOSO ', 'background: #22c55e; color: black; font-weight: bold; padding: 2px 4px;');
       console.log("Tabla: cosmic_cv_leads");
       console.log("Modo: Write-Only (ID oculto por seguridad)");
+      // Verificación visual del consentimiento de marketing
+      console.log(`Marketing Consent: %c${marketingConsent ? 'GRANTED' : 'DENIED'}`, marketingConsent ? 'color: green; font-weight: bold' : 'color: red; font-weight: bold');
     }
   } catch (err) {
     console.error('%c 💥 ERROR DE CONEXIÓN CRÍTICO ', 'background: red; color: white; font-weight: bold;');

@@ -105,22 +105,22 @@ const App: React.FC = () => {
         return;
       }
       
-      // 1. Save locally for UX
+      // 1. Save locally for UX (LocalStorage only, NO DB yet)
       localStorage.setItem('cosmic_pilot_credentials', JSON.stringify({
         name: formData.name,
         email: formData.email,
         marketingConsent: formData.marketingConsent
       }));
 
-      // 2. Save remotely to DB (Marketing Lead)
-      // Fire and forget - don't block the UI if DB is slow
-      saveLead(formData.name, formData.email, formData.marketingConsent).catch(e => console.error("DB Error", e));
+      // REMOVIDO: saveLead() aquí causaba duplicados.
+      // Esperamos al paso 2 para tener la misión y guardar todo junto.
       
       if (formData.marketingConsent) {
         console.log(">> MARKETING SIGNAL: Subscribing commander to frequency [SECURE CHANNEL]");
       }
     } else if (step === 2) {
-       // Optional: Update lead with selected mission if desired
+       // 2. Save remotely to DB (Single complete record)
+       // Ahora guardamos aquí, cuando tenemos Nombre + Email + Misión
        saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission).catch(e => console.error("DB Update Error", e));
     }
     
