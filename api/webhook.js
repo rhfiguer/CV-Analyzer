@@ -41,9 +41,8 @@ export default async function handler(req, res) {
     const payload = JSON.parse(rawBody.toString());
     const eventName = payload.meta.event_name;
     const attributes = payload.data.attributes;
-    const resourceId = payload.data.id; // ID de la suscripción o de la orden
+    const resourceId = payload.data.id; 
 
-    // 2. Extracción de Datos Normalizados
     const userEmail = (attributes.user_email || "").toLowerCase().trim();
     const status = attributes.status;
     const isTest = attributes.test_mode;
@@ -56,25 +55,22 @@ export default async function handler(req, res) {
       return res.status(200).json({ message: 'Event ignored' });
     }
 
-    // Un pago es válido si está pagado o activo
     const isPremium = ['paid', 'active', 'on_trial'].includes(status) || (isTest && status === 'paid');
 
     if (isPremium && userEmail) {
       console.log(`[LS WEBHOOK] 🚀 Ejecutando actualización para: ${userEmail}`);
       
-      // Mapeo exacto a las columnas de la tabla 'profiles' según las capturas
+      // Mapeo SEGURO: Solo columnas confirmadas. 
+      // Eliminamos 'updated_at' y 'renews_at' para evitar errores de schema si no existen.
       const updatePayload = {
         is_premium: true,
-        status: status, // Columna corregida
+        status: status,
         subscription_id: resourceId.toString(),
         customer_id: attributes.customer_id?.toString() || null,
-        variant_id: attributes.variant_id?.toString() || null,
-        renews_at: attributes.renews_at || null,
-        updated_at: new Date().toISOString()
+        variant_id: attributes.variant_id?.toString() || null
       };
 
-      // Intentamos actualizar por email (usando ilike para ser insensible a mayúsculas)
-      const { data, error, count } = await supabase
+      const { error, count } = await supabase
         .from('profiles')
         .update(updatePayload, { count: 'exact' })
         .ilike('email', userEmail);
@@ -85,17 +81,15 @@ export default async function handler(req, res) {
       }
 
       if (count === 0) {
-        console.warn(`[LS WEBHOOK] ⚠️ El email "${userEmail}" no tiene un perfil registrado todavía.`);
-        // Nota: En este punto, el pago se "perdería" si el usuario no tiene perfil.
-        // Pero como ResultPanel chequea profiles, es vital que el perfil exista.
+        console.warn(`[LS WEBHOOK] ⚠️ No se encontró perfil para "${userEmail}". El pago se procesó pero el acceso premium requiere un perfil previo.`);
         return res.status(404).json({ error: 'User profile not found', email: userEmail });
       }
 
-      console.log(`[LS WEBHOOK] ✅ Perfil "${userEmail}" actualizado. Columnas: is_premium, status, IDs.`);
+      console.log(`[LS WEBHOOK] ✅ Perfil "${userEmail}" actualizado exitosamente.`);
       return res.status(200).json({ success: true, updated: count });
     }
 
-    return res.status(200).json({ success: true, message: 'No action required for this status' });
+    return res.status(200).json({ success: true, message: 'No action required' });
 
   } catch (error) {
     console.error("[LS WEBHOOK FATAL ERROR]:", error);
