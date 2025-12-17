@@ -176,8 +176,8 @@ const App: React.FC = () => {
       <div className="fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/40 to-black/90 pointer-events-none"></div>
       <div className="fixed inset-0 z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
       
-      {/* Main Container */}
-      <main className="container mx-auto px-4 py-8 md:py-16 relative z-10 min-h-screen flex flex-col items-center justify-center">
+      {/* Main Container - Reduced py for compact landing */}
+      <main className="container mx-auto px-4 py-6 md:py-10 relative z-10 min-h-screen flex flex-col items-center justify-center">
         
         {/* LANDING PAGE STATE */}
         {showLanding ? (
