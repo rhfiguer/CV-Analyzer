@@ -66,12 +66,11 @@ export default async function handler(req, res) {
       Refierete al usuario por su nombre: ${name}.
       Sé crítico pero motivador.
 
-      INSTRUCCIONES CRÍTICAS DE FORMATO (LONGITUD):
-      1. 'nivel_actual': DEBE ser un TÍTULO CORTO de rango (MÁXIMO 3 a 5 palabras). 
-         - Correcto: "Comandante Senior", "Estratega de Sistemas", "Cadete en Ascenso", "Veterano Táctico".
-         - Incorrecto: "El candidato presenta un perfil sólido con experiencia en..." (Esto va en análisis).
-      2. 'analisis_mision': Aquí debes incluir la descripción detallada, el resumen del perfil y la justificación del rango.
-      3. 'puntos_fuertes' y 'brechas_criticas': Items concisos y directos.
+      INSTRUCCIONES CRÍTICAS DE FORMATO:
+      1. 'nivel_actual': DEBE ser un TÍTULO CORTO de rango (MÁXIMO 3 a 5 palabras). Ej: "Comandante Senior", "Estratega Táctico".
+      2. 'probabilidad_exito': DEBE ser un número ENTERO entre 0 y 100. (Ejemplo: 85, NO 0.85).
+      3. 'analisis_mision': Resumen del perfil y justificación del rango.
+      4. 'puntos_fuertes' y 'brechas_criticas': Items concisos.
     `;
 
     // Schema de respuesta
@@ -79,7 +78,7 @@ export default async function handler(req, res) {
       type: Type.OBJECT,
       properties: {
         nivel_actual: { type: Type.STRING },
-        probabilidad_exito: { type: Type.NUMBER },
+        probabilidad_exito: { type: Type.NUMBER, description: "Un número entero de 0 a 100 representando el porcentaje." },
         analisis_mision: { type: Type.STRING },
         puntos_fuertes: { type: Type.ARRAY, items: { type: Type.STRING } },
         brechas_criticas: { type: Type.ARRAY, items: { type: Type.STRING } },

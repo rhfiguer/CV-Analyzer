@@ -71,7 +71,44 @@ export const analyzeCV = async (
       throw new Error(result.error || `Error desconocido del servidor: ${response.status}`);
     }
 
-    return result as AnalysisResult;
+    // ---------------------------------------------------------
+    // CAPA DE SANEAMIENTO DE DATOS (DATA SANITIZATION LAYER)
+    // ---------------------------------------------------------
+    
+    // Problema común: LLMs devuelven 0.87 en lugar de 87 para porcentajes.
+    let rawProb = result.probabilidad_exito;
+    
+    // Si viene como string "85%" o "0.85", limpiarlo
+    if (typeof rawProb === 'string') {
+        rawProb = parseFloat((rawProb as string).replace('%', ''));
+    }
+
+    let finalProb = Number(rawProb);
+    
+    // Fallback de seguridad si no es un número
+    if (isNaN(finalProb)) {
+        finalProb = 50; 
+    }
+
+    // Heurística: Si el valor es <= 1.0 (ej: 0.85), asumimos notación decimal y convertimos a %.
+    // Excepción: Si es exactamente 0 o 1, podría ser ambiguo, pero en contextos de scoring 
+    // 1 suele ser 1% (muy bajo) o 100% (decimal). 
+    // Dado que 1% es raro en CVs decentes, trataremos 1 como 100%.
+    if (finalProb <= 1.0 && finalProb > 0) {
+        finalProb = Math.round(finalProb * 100);
+    } else {
+        finalProb = Math.round(finalProb);
+    }
+
+    // Clamp final (asegurar rango 0-100)
+    finalProb = Math.max(0, Math.min(100, finalProb));
+
+    const cleanResult: AnalysisResult = {
+        ...result,
+        probabilidad_exito: finalProb
+    };
+
+    return cleanResult;
 
   } catch (error: any) {
     console.error("Error en la misión de análisis:", error);
