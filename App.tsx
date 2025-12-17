@@ -6,13 +6,15 @@ import { ResultPanel } from './components/ResultPanel';
 import { LandingPage } from './components/LandingPage';
 import { analyzeCV } from './services/geminiService';
 import { saveLead } from './services/supabase';
-import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket } from 'lucide-react';
+import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, Camera } from 'lucide-react';
+import { MediaKit } from './components/MediaKit';
 
 const MAX_FILE_SIZE_MB = 3; // Límite de seguridad para Vercel Serverless (4.5MB payload limit)
 const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const App: React.FC = () => {
   const [showLanding, setShowLanding] = useState<boolean>(true);
+  const [showMediaKit, setShowMediaKit] = useState<boolean>(false);
   const [step, setStep] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +178,11 @@ const App: React.FC = () => {
       <div className="fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/40 to-black/90 pointer-events-none"></div>
       <div className="fixed inset-0 z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
       
+      {/* MEDIA KIT OVERLAY */}
+      {showMediaKit && (
+        <MediaKit onClose={() => setShowMediaKit(false)} />
+      )}
+
       {/* Main Container - Reduced py for compact landing */}
       <main className="container mx-auto px-4 py-6 md:py-10 relative z-10 min-h-screen flex flex-col items-center justify-center">
         
@@ -454,6 +461,16 @@ const App: React.FC = () => {
             </div>
           </>
         )}
+
+        {/* FOOTER LINK TO MEDIA KIT */}
+        <div className="mt-12 text-center pb-4 opacity-40 hover:opacity-100 transition-opacity">
+           <button 
+             onClick={() => setShowMediaKit(true)} 
+             className="text-[10px] text-cyan-400 flex items-center gap-1 mx-auto hover:underline"
+           >
+              <Camera size={12} /> Media Kit (Assets)
+           </button>
+        </div>
       </main>
     </div>
   );
