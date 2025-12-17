@@ -1,44 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Inicializar cliente con la API Key del entorno de servidor
-// IMPORTANTE: Esta key debe configurarse en Vercel (Settings > Environment Variables) como API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-/**
- * Función auxiliar para reintentar la generación de contenido en caso de saturación (503).
- * Implementa backoff exponencial: espera 1s, luego 2s, luego 4s.
- */
-async function generateWithRetry(params, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await ai.models.generateContent(params);
-    } catch (error) {
-      // 1. Detección de Cuota Excedida (Rate Limit)
-      // Si es cuota, NO reintentamos (no tiene sentido martillear), fallamos rápido para avisar al usuario.
-      const isQuotaError = error.message?.includes('Quota exceeded') || error.status === 429;
-      if (isQuotaError) {
-        throw error; // Lanzar inmediatamente para que el handler principal lo capture
-      }
-
-      // 2. Detección de Sobrecarga Temporal (503)
-      const isOverloaded = 
-        error.message?.includes('503') || 
-        error.message?.includes('overloaded') || 
-        error.status === 503 ||
-        error.code === 503;
-
-      // Si es el último intento o no es error de carga, lanzamos el error
-      if (!isOverloaded || i === retries - 1) {
-        throw error;
-      }
-
-      // Esperar antes de reintentar
-      const delay = Math.pow(2, i) * 1000;
-      console.warn(`[Gemini Overload] Sistema saturado. Reintentando en ${delay}ms... (Intento ${i + 1}/${retries})`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-}
 
 export default async function handler(req, res) {
   // 1. Configuración CORS
@@ -62,16 +24,13 @@ export default async function handler(req, res) {
   try {
     const { fileBase64, mimeType, missionId, name } = req.body;
 
-    // CHECK ESPECÍFICO DE API KEY
     if (!process.env.API_KEY) {
-      console.error("Server Error: Missing API_KEY env var");
-      return res.status(500).json({ 
-        error: 'CONFIGURACIÓN REQUERIDA: Falta la API_KEY de Gemini en las variables de entorno de Vercel.' 
-      });
+      console.error("Server Error: Missing API_KEY");
+      return res.status(500).json({ error: 'Configuration Error: Missing API Key' });
     }
 
     if (!fileBase64 || !missionId || !name) {
-      return res.status(400).json({ error: 'Datos incompletos para la misión.' });
+      return res.status(400).json({ error: 'Payload incompleto' });
     }
 
     // Contexto de misión
@@ -109,12 +68,11 @@ export default async function handler(req, res) {
       4. 'puntos_fuertes' y 'brechas_criticas': Items concisos.
     `;
 
-    // Schema de respuesta
     const responseSchema = {
       type: Type.OBJECT,
       properties: {
         nivel_actual: { type: Type.STRING },
-        probabilidad_exito: { type: Type.NUMBER, description: "Un número entero de 0 a 100 representando el porcentaje." },
+        probabilidad_exito: { type: Type.NUMBER },
         analisis_mision: { type: Type.STRING },
         puntos_fuertes: { type: Type.ARRAY, items: { type: Type.STRING } },
         brechas_criticas: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -123,42 +81,65 @@ export default async function handler(req, res) {
       required: ["nivel_actual", "probabilidad_exito", "analisis_mision", "puntos_fuertes", "brechas_criticas", "plan_de_vuelo"],
     };
 
-    console.log(`Iniciando análisis de perfil para misión ${missionId}...`);
+    console.log(`Iniciando análisis para ${name} (Misión: ${missionId})...`);
 
-    // Usamos la función helper con retry
-    const response = await generateWithRetry({
-      model: "gemini-2.5-flash",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType || 'application/pdf',
-              data: fileBase64
-            }
-          },
-          { text: `Analiza este CV para el Comandante ${name}.` }
-        ]
-      },
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-      },
-    });
+    let response;
+    
+    // ESTRATEGIA DE INTENTO ÚNICO + FALLBACK (Sin esperas para no agotar los 10s de Vercel)
+    try {
+      // Intento 1: Modelo Principal (Gemini 2.5 Flash)
+      console.log("Intentando con gemini-2.5-flash...");
+      response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
+            { text: `Analiza este CV para el Comandante ${name}.` }
+          ]
+        },
+        config: { systemInstruction, responseMimeType: "application/json", responseSchema },
+      });
+    } catch (primaryError) {
+      console.warn("Fallo modelo primario:", primaryError.message);
+      
+      // Si es error 503 (Sobrecarga), intentamos inmediatamente con el modelo anterior (más estable)
+      if (primaryError.message?.includes('503') || primaryError.status === 503) {
+          console.log("⚠️ 2.5 Saturado. Activando propulsores auxiliares (gemini-2.0-flash)...");
+          try {
+            response = await ai.models.generateContent({
+                model: "gemini-2.0-flash", // Fallback a versión anterior estable
+                contents: {
+                  parts: [
+                    { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
+                    { text: `Analiza este CV para el Comandante ${name}.` }
+                  ]
+                },
+                config: { systemInstruction, responseMimeType: "application/json", responseSchema },
+            });
+          } catch (secondaryError) {
+             console.error("Fallo total de motores.");
+             throw secondaryError; // Si falla el backup, lanzamos el error original
+          }
+      } else {
+          throw primaryError; // Si no es 503 (ej: 400 Bad Request), fallar directo
+      }
+    }
 
-    const responseText = response.text;
-    if (!responseText) throw new Error("La IA no devolvió respuesta. Intenta de nuevo.");
+    const responseText = response?.text;
+    if (!responseText) throw new Error("La IA no devolvió respuesta.");
 
     return res.status(200).json(JSON.parse(responseText));
 
   } catch (error) {
-    console.error("Error en /api/analyze:", error);
+    console.error("Error crítico en /api/analyze:", error);
     
-    // MANEJO ESPECÍFICO DE RATE LIMIT (429)
-    if (error.message?.includes('Quota exceeded') || error.status === 429) {
-        return res.status(429).json({ error: "Límite de cuota IA alcanzado. Motores en enfriamiento." });
+    const statusCode = error.status || 500;
+    let errorMessage = error.message || "Fallo crítico en el motor de análisis.";
+
+    if (errorMessage.includes('Quota')) {
+        return res.status(429).json({ error: "Límite de cuota alcanzado." });
     }
 
-    return res.status(500).json({ error: error.message || "Fallo crítico en el motor de análisis." });
+    return res.status(statusCode).json({ error: errorMessage });
   }
 }
