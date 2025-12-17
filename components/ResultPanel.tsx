@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
@@ -15,14 +15,10 @@ interface ResultPanelProps {
 
 // Helper para procesar el formato de texto de los pasos (ej: "**Título**: Descripción")
 const parseStepContent = (text: string) => {
-  // 1. Intentar detectar formato Markdown Bold: **Título**: Descripción
   const mdMatch = text.match(/\*\*(.*?)\*\*:?\s*(.*)/s);
   if (mdMatch) {
     return { title: mdMatch[1], body: mdMatch[2] };
   }
-
-  // 2. Intentar detectar formato con dos puntos: Título: Descripción
-  // Limitamos la búsqueda del dos puntos a los primeros 60 caracteres para evitar falsos positivos en oraciones largas
   const colonIndex = text.indexOf(':');
   if (colonIndex > 0 && colonIndex < 60) {
     return { 
@@ -30,8 +26,6 @@ const parseStepContent = (text: string) => {
       body: text.substring(colonIndex + 1).trim() 
     };
   }
-
-  // 3. Fallback: Devolver todo como cuerpo si no hay estructura clara
   return { title: '', body: text };
 };
 
@@ -44,25 +38,32 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 }) => {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [transmissionId, setTransmissionId] = useState<string>('');
+  
+  // PREMIUM STATE: Por defecto bloqueado para simular el flujo freemium
+  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+
+  const handleUnlock = () => {
+    setUnlocking(true);
+    // Simular proceso de pago/desbloqueo
+    setTimeout(() => {
+        setIsPremiumUnlocked(true);
+        setUnlocking(false);
+    }, 2000);
+  };
 
   const handleSendEmail = async () => {
     if (emailStatus === 'sending') return;
     
     setEmailStatus('sending');
-    
-    // 1. Give UI a moment to update state before heavy processing (PDF generation)
     await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
-      // 2. Generate PDF
       console.log("Generating PDF...");
       const doc = generateMissionReport(result, userName, userEmail);
       const missionTitle = MISSIONS.find(m => m.id === missionId)?.title;
       
       console.log("Sending email request...");
-      
-      // 3. Send to Backend API with a race condition for safety
-      // If the API call takes longer than 20 seconds, we treat it as a failure to unblock the UI
       const emailPromise = sendEmailReport(doc, userEmail, userName, missionTitle);
       const timeoutPromise = new Promise<{ success: boolean, error: string, id?: string }>((_, reject) => 
         setTimeout(() => reject(new Error("Tiempo de espera agotado (Timeout)")), 20000)
@@ -79,56 +80,44 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       
     } catch (error: any) {
       console.error("Transmission failed, initiating manual override:", error);
-      
-      // 4. Fallback: Download locally immediately if API fails
       try {
         const doc = generateMissionReport(result, userName, userEmail);
         doc.save(`Mision_Cosmica_${userName.replace(/\s+/g, '_')}.pdf`);
       } catch (pdfError) {
         console.error("Local save failed too:", pdfError);
       }
-      
       setEmailStatus('error'); 
     }
   };
 
   // SMART GRID LOGIC
-  // Calculamos la mejor distribución basada en la cantidad de items para evitar huérfanos
   const stepCount = result.plan_de_vuelo.length;
-  
   let gridColsClass = "";
   let showLine = true;
 
   if (stepCount === 6) {
-    // 6 items: 3 columnas (2 filas perfectas de 3)
-    // Ocultamos la línea porque en 2 filas se ve extraña cortando solo la primera
     gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
     showLine = false; 
   } else if (stepCount === 5) {
-    // 5 items: Estándar de 5 columnas
     gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-5";
     showLine = true;
   } else if (stepCount === 4) {
-    // 4 items: 4 columnas
     gridColsClass = "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
     showLine = true;
   } else if (stepCount === 3) {
-    // 3 items: 3 columnas
     gridColsClass = "grid-cols-1 md:grid-cols-3";
     showLine = true;
   } else if (stepCount === 2) {
-    // 2 items: 2 columnas centradas
     gridColsClass = "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto";
     showLine = true;
   } else {
-    // Fallback (> 6 o 1): Grid generica
     gridColsClass = "grid-cols-1 md:grid-cols-3 lg:grid-cols-4";
     showLine = false;
   }
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
-      {/* Header Stats */}
+      {/* Header Stats - SIEMPRE VISIBLE (GANCHO) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700 p-6 rounded-2xl flex items-center justify-between">
           <div>
@@ -150,7 +139,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Main Analysis */}
+      {/* Main Analysis - SIEMPRE VISIBLE */}
       <div className="glass-panel p-6 rounded-2xl border-l-4 border-purple-500">
         <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
            <Navigation size={20} className="text-purple-400"/> Análisis de Trayectoria
@@ -160,8 +149,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </p>
       </div>
 
-      {/* Grid: Strengths & Weaknesses */}
+      {/* Grid: Strengths & Weaknesses - DEBILIDADES BLOQUEADAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Puntos Fuertes - VISIBLE */}
         <div className="bg-slate-900/40 rounded-xl p-5 border border-green-900/50">
           <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2">
             <ShieldCheck size={18} /> Propulsores Activos
@@ -175,62 +165,114 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           </ul>
         </div>
 
-        <div className="bg-slate-900/40 rounded-xl p-5 border border-red-900/50">
-          <h4 className="text-red-400 font-bold mb-4 flex items-center gap-2">
+        {/* Brechas Críticas - BLOQUEADO SI ES FREE */}
+        <div className="relative bg-slate-900/40 rounded-xl p-5 border border-red-900/50 overflow-hidden group">
+          
+          <h4 className="text-red-400 font-bold mb-4 flex items-center gap-2 relative z-10">
             <AlertTriangle size={18} /> Fugas en el Casco
           </h4>
-          <ul className="space-y-2">
+          
+          <div className={`space-y-2 relative z-0 ${!isPremiumUnlocked ? 'blur-sm select-none opacity-50 transition-all duration-700' : ''}`}>
             {result.brechas_criticas.map((point, idx) => (
               <li key={idx} className="flex items-start gap-2 text-slate-300 text-sm">
                 <span className="text-red-500 mt-1">⚠</span> {point}
               </li>
             ))}
-          </ul>
+          </div>
+
+          {/* OVERLAY DE BLOQUEO (WEAKNESSES) */}
+          {!isPremiumUnlocked && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/60 backdrop-blur-[2px]">
+                <div className="bg-red-950/80 border border-red-500/50 p-3 rounded-lg flex items-center gap-3 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+                    <Lock size={20} className="text-red-500 animate-pulse" />
+                    <div className="text-left">
+                        <p className="text-red-400 text-xs font-bold tracking-widest uppercase">DATOS CLASIFICADOS</p>
+                        <p className="text-[10px] text-red-300/70">Requiere autorización de nivel superior</p>
+                    </div>
+                </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Flight Plan */}
+      {/* Flight Plan - PASIALMENTE BLOQUEADO */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 relative overflow-hidden">
         <h3 className="text-lg font-bold text-white mb-8 uppercase tracking-widest text-center relative z-10">Plan de Vuelo Sugerido</h3>
         
-        {/* Container relativo para posicionar la línea y el grid */}
         <div className="relative">
              
-             {/* Connecting Line (Only visible on MD+ and if showLine is true) */}
              {showLine && (
                 <div className="hidden lg:block absolute top-8 left-[10%] right-[10%] h-0.5 bg-slate-700/50 -z-0"></div>
              )}
 
-             {/* Smart Grid Distribution */}
             <div className={`grid gap-4 relative z-10 ${gridColsClass}`}>
                 {result.plan_de_vuelo.map((step, idx) => {
                     const { title, body } = parseStepContent(step);
+                    // Si no es premium, solo mostramos el primer paso claramente
+                    const isLockedItem = !isPremiumUnlocked && idx > 0;
+
                     return (
-                        <div key={idx} className="bg-slate-950 border border-slate-600 p-4 rounded-xl flex flex-col items-center hover:border-cyan-400 transition-all hover:-translate-y-1 duration-300 h-full shadow-lg group">
-                            {/* Circle Indicator */}
-                            <div className="w-8 h-8 rounded-full bg-slate-900 text-cyan-400 flex items-center justify-center font-bold mb-3 border-2 border-slate-600 group-hover:border-cyan-400 transition-colors shadow-[0_0_10px_rgba(6,182,212,0.1)] z-20 shrink-0">
-                                {idx + 1}
+                        <div key={idx} className={`
+                            bg-slate-950 border p-4 rounded-xl flex flex-col items-center transition-all duration-300 h-full shadow-lg relative overflow-hidden
+                            ${isLockedItem 
+                                ? 'border-slate-800 opacity-60 blur-[3px] select-none scale-95 grayscale' 
+                                : 'border-slate-600 hover:border-cyan-400 hover:-translate-y-1 group'}
+                        `}>
+                            <div className={`
+                                w-8 h-8 rounded-full flex items-center justify-center font-bold mb-3 border-2 transition-colors z-20 shrink-0
+                                ${isLockedItem 
+                                    ? 'bg-slate-900 text-slate-600 border-slate-700' 
+                                    : 'bg-slate-900 text-cyan-400 border-slate-600 group-hover:border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.1)]'}
+                            `}>
+                                {isLockedItem ? <Lock size={14}/> : idx + 1}
                             </div>
                             
-                            {/* Content Container */}
                             <div className="flex flex-col gap-2 w-full">
                                 {title && (
-                                    <h4 className="text-cyan-300 font-bold text-xs sm:text-sm text-center leading-tight">
+                                    <h4 className={`font-bold text-xs sm:text-sm text-center leading-tight ${isLockedItem ? 'text-slate-500' : 'text-cyan-300'}`}>
                                         {title}
                                     </h4>
                                 )}
-                                <p className={`text-xs text-slate-300 leading-relaxed ${title ? 'text-left' : 'text-center'}`}>
-                                    {body}
+                                <p className={`text-xs leading-relaxed ${title ? 'text-left' : 'text-center'} ${isLockedItem ? 'text-slate-600' : 'text-slate-300'}`}>
+                                    {isLockedItem ? 'Contenido táctico encriptado para su seguridad.' : body}
                                 </p>
                             </div>
                         </div>
                     );
                 })}
             </div>
+
+            {/* OVERLAY DE BLOQUEO (FLIGHT PLAN) */}
+            {!isPremiumUnlocked && (
+                <div className="absolute inset-x-0 bottom-0 top-1/3 z-30 bg-gradient-to-t from-slate-950 via-slate-900/90 to-transparent flex flex-col items-center justify-center pt-10">
+                    <button 
+                        onClick={handleUnlock}
+                        disabled={unlocking}
+                        className="group relative px-8 py-4 bg-white text-slate-950 font-bold rounded-xl shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-all transform hover:scale-105 active:scale-95 flex items-center gap-3 overflow-hidden"
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-white to-cyan-400 opacity-20 group-hover:animate-pulse"></div>
+                        {unlocking ? (
+                             <>
+                                <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                                AUTORIZANDO...
+                             </>
+                        ) : (
+                             <>
+                                <Unlock size={20} className="text-cyan-600" />
+                                DESBLOQUEAR REPORTE COMPLETO
+                             </>
+                        )}
+                    </button>
+                    <p className="text-slate-400 text-xs mt-3 flex items-center gap-1">
+                        <Star size={12} className="text-yellow-500" />
+                        Acceso Premium Instantáneo
+                    </p>
+                </div>
+            )}
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons - SOLO VISIBLES SI ESTÁ DESBLOQUEADO O PARA RESETEAR */}
       <div className="flex flex-col md:flex-row justify-center items-center gap-4 pt-6">
         <button
           onClick={onReset}
@@ -239,47 +281,49 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           Iniciar Nueva Misión
         </button>
 
-        <button
-          onClick={handleSendEmail}
-          disabled={emailStatus === 'sending' || emailStatus === 'sent'}
-          className={`
-            relative overflow-hidden group px-8 py-3 rounded-full font-bold transition-all border
-            ${emailStatus === 'sent' 
-              ? 'bg-green-500/10 border-green-500/50 text-green-400 cursor-default' 
-              : emailStatus === 'error'
-              ? 'bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30'
-              : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)]'
-            }
-          `}
-        >
-          <div className="flex items-center gap-2">
-            {emailStatus === 'idle' && (
-              <>
-                <Mail size={18} /> Enviar Reporte a la Base
-              </>
-            )}
-            {emailStatus === 'sending' && (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Transmitiendo Datos...
-              </>
-            )}
-            {emailStatus === 'sent' && (
-              <>
-                <CheckCircle size={18} /> Transmisión Completada
-              </>
-            )}
-            {emailStatus === 'error' && (
-               <>
-                <Download size={18} /> Descarga Manual (Error de Red)
-               </>
-            )}
-          </div>
-        </button>
+        {isPremiumUnlocked && (
+            <button
+            onClick={handleSendEmail}
+            disabled={emailStatus === 'sending' || emailStatus === 'sent'}
+            className={`
+                relative overflow-hidden group px-8 py-3 rounded-full font-bold transition-all border animate-[fadeIn_0.5s_ease-out]
+                ${emailStatus === 'sent' 
+                ? 'bg-green-500/10 border-green-500/50 text-green-400 cursor-default' 
+                : emailStatus === 'error'
+                ? 'bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30'
+                : 'bg-cyan-600 hover:bg-cyan-500 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+                }
+            `}
+            >
+            <div className="flex items-center gap-2">
+                {emailStatus === 'idle' && (
+                <>
+                    <Mail size={18} /> Enviar Copia a la Base
+                </>
+                )}
+                {emailStatus === 'sending' && (
+                <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Transmitiendo...
+                </>
+                )}
+                {emailStatus === 'sent' && (
+                <>
+                    <CheckCircle size={18} /> Transmisión Completada
+                </>
+                )}
+                {emailStatus === 'error' && (
+                <>
+                    <Download size={18} /> Descarga Manual (Error)
+                </>
+                )}
+            </div>
+            </button>
+        )}
       </div>
       
       {/* SUCCESS & SPAM WARNING PANEL */}
-      {emailStatus === 'sent' && (
+      {emailStatus === 'sent' && isPremiumUnlocked && (
         <div className="mt-6 bg-slate-900/80 border border-green-500/30 rounded-xl p-5 animate-[fadeIn_0.5s_ease-out] shadow-lg">
             
             {/* Header: Success */}
