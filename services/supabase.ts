@@ -48,8 +48,11 @@ export const saveLead = async (
   console.group('%c 🛰️ DB UPLINK: Guardando Lead...', 'color: #06b6d4; font-weight: bold;'); // Cyan color
   
   try {
-    const { data, error } = await supabase
-      .from('cosmic_cv_leads') // Tabla específica
+    // CAMBIO CRÍTICO: Eliminamos .select()
+    // Al ser un formulario público, a menudo no tenemos permisos de SELECT (Lectura)
+    // por seguridad. Al quitar .select(), hacemos un "Fire and Forget" que es más robusto ante RLS.
+    const { error } = await supabase
+      .from('cosmic_cv_leads')
       .insert([
         { 
           name, 
@@ -58,22 +61,24 @@ export const saveLead = async (
           mission_id: missionId || null,
           created_at: timestamp
         },
-      ])
-      .select(); // Pedimos que nos devuelva el registro creado para confirmar ID
+      ]);
 
     if (error) {
       console.error('%c ❌ ERROR AL GUARDAR EN SUPABASE ', 'background: red; color: white; font-weight: bold; padding: 2px 4px;');
+      console.error("Code:", error.code);
       console.error("Mensaje:", error.message);
       
       // DIAGNÓSTICO INTELIGENTE DE RLS
-      if (error.message.includes("row-level security")) {
+      if (error.code === '42501' || error.message.includes("row-level security")) {
         console.warn(`
-%c 🛡️ ALERTA DE SEGURIDAD (RLS) DETECTADA 🛡️
-Parece que la tabla 'cosmic_cv_leads' existe, pero no tiene una política que permita escribir datos públicos.
+%c 🛡️ BLOQUEO DE SEGURIDAD (RLS) 🛡️
+La base de datos rechazó la escritura.
         
-SOLUCIÓN: Ejecuta este SQL en tu panel de Supabase:
+ASEGÚRATE DE CORRER ESTE SQL EN SUPABASE (SQL EDITOR):
 ---------------------------------------------------
-create policy "Permitir inserción pública cosmic leads"
+drop policy if exists "Public Insert" on cosmic_cv_leads;
+
+create policy "Public Insert"
 on public.cosmic_cv_leads
 for insert
 to anon
@@ -85,8 +90,7 @@ with check (true);
     } else {
       console.log('%c ✅ GUARDADO EXITOSO ', 'background: #22c55e; color: black; font-weight: bold; padding: 2px 4px;');
       console.log("Tabla: cosmic_cv_leads");
-      console.log("ID Registro:", data?.[0]?.id);
-      // No logueamos los datos crudos aquí para seguridad
+      console.log("Modo: Write-Only (ID oculto por seguridad)");
     }
   } catch (err) {
     console.error('%c 💥 ERROR DE CONEXIÓN CRÍTICO ', 'background: red; color: white; font-weight: bold;');
