@@ -8,6 +8,9 @@ import { analyzeCV } from './services/geminiService';
 import { saveLead } from './services/supabase';
 import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket } from 'lucide-react';
 
+const MAX_FILE_SIZE_MB = 3; // Límite de seguridad para Vercel Serverless (4.5MB payload limit)
+const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 const App: React.FC = () => {
   const [showLanding, setShowLanding] = useState<boolean>(true);
   const [step, setStep] = useState<number>(1);
@@ -67,28 +70,33 @@ const App: React.FC = () => {
     setFormData(prev => ({ ...prev, mission: id }));
   };
 
+  const validateAndSetFile = (file: File) => {
+    // 1. Check Type
+    if (file.type !== 'application/pdf') {
+      setError("Solo se permiten archivos PDF para el análisis de combustible.");
+      return;
+    }
+    
+    // 2. Check Size
+    if (file.size > MAX_FILE_BYTES) {
+      setError(`⚠️ ALERTA DE CARGA: El archivo excede el límite de masa (${MAX_FILE_SIZE_MB}MB). Por favor comprímelo para el despegue.`);
+      return;
+    }
+
+    setFormData(prev => ({ ...prev, file: file }));
+    setError(null);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.type !== 'application/pdf') {
-        setError("Solo se permiten archivos PDF para el análisis de combustible.");
-        return;
-      }
-      setFormData(prev => ({ ...prev, file: file }));
-      setError(null);
+      validateAndSetFile(e.target.files[0]);
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-       const file = e.dataTransfer.files[0];
-       if (file.type !== 'application/pdf') {
-        setError("Solo se permiten archivos PDF.");
-        return;
-      }
-      setFormData(prev => ({ ...prev, file: file }));
-      setError(null);
+       validateAndSetFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -373,7 +381,9 @@ const App: React.FC = () => {
                         <div className="animate-pulse">
                           <FileText size={48} className="text-green-400 mb-4 mx-auto" />
                           <p className="text-lg font-medium text-green-300">{formData.file.name}</p>
-                          <p className="text-sm text-green-500/70 mt-1">Listo para análisis</p>
+                          <p className="text-sm text-green-500/70 mt-1">
+                             {(formData.file.size / (1024 * 1024)).toFixed(2)} MB - Listo para análisis
+                          </p>
                         </div>
                       ) : (
                         <>
@@ -381,7 +391,7 @@ const App: React.FC = () => {
                             <UploadCloud size={32} className="text-cyan-400" />
                           </div>
                           <p className="text-lg font-medium text-slate-200">Arrastra tu CV (PDF)</p>
-                          <p className="text-sm text-slate-500 mt-2">o haz click para abrir la compuerta</p>
+                          <p className="text-sm text-slate-500 mt-2">o haz click para abrir la compuerta (Máx {MAX_FILE_SIZE_MB}MB)</p>
                         </>
                       )}
                     </div>
@@ -435,8 +445,8 @@ const App: React.FC = () => {
                 {/* Error Message */}
                 {error && (
                   <div className="mt-6 bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl flex items-center gap-3 animate-bounce">
-                    <AlertCircle size={20} />
-                    <p>{error}</p>
+                    <AlertCircle size={20} className="flex-shrink-0" />
+                    <p className="text-sm md:text-base">{error}</p>
                   </div>
                 )}
 

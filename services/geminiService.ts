@@ -51,7 +51,15 @@ export const analyzeCV = async (
       }),
     });
 
-    // 3. Robust Error Handling
+    // 3. Robust Error Handling based on Status Code
+    if (response.status === 413) {
+      throw new Error("⚠️ SOBRECARGA DE BODEGA: El archivo es demasiado pesado para la transmisión subespacial (Máx 3MB). Por favor comprímelo en ilovepdf.com e intenta de nuevo.");
+    }
+    
+    if (response.status === 504) {
+      throw new Error("⌛ TIEMPO DE VUELO EXCEDIDO: La IA tardó demasiado en responder (Timeout). El archivo puede ser muy complejo o los servidores están saturados. Intenta con un PDF más simple.");
+    }
+
     const contentType = response.headers.get("content-type");
     
     // Si la respuesta no es JSON (ej: es HTML de error 404 o 500 de Vercel por defecto)
@@ -62,7 +70,7 @@ export const analyzeCV = async (
        if (response.status === 404) {
          throw new Error("ERROR DE CONEXIÓN: El endpoint /api/analyze no está disponible. Si estás en local, asegúrate de usar 'vercel dev' para que funcionen las API routes.");
        }
-       throw new Error(`Error del servidor (${response.status}). Verifica los logs de Vercel.`);
+       throw new Error(`Error de comunicación con la base (${response.status}). Intenta nuevamente en unos segundos.`);
     }
 
     const result = await response.json();
