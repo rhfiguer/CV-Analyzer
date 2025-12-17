@@ -10,7 +10,8 @@ import { MissionId } from '../types';
 const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-let supabase: any = null;
+// Exportamos la instancia para usarla en componentes (Auth, Realtime, etc.)
+export let supabase: any = null;
 
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
   try {

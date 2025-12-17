@@ -1,9 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock, Loader2 } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
+import { supabase } from '../services/supabase';
+import { LoginModal } from './LoginModal';
+
+// ------------------------------------------------------------------
+// CONFIGURACIÓN DE PAGO (LEMON SQUEEZY)
+// Reemplaza esta URL con la URL "Buy" de tu variante en Lemon Squeezy
+// ------------------------------------------------------------------
+const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
+// ^^^ EJEMPLO: Reemplazar con ID Real
 
 interface ResultPanelProps {
   result: AnalysisResult;
@@ -13,7 +22,7 @@ interface ResultPanelProps {
   missionId?: string;
 }
 
-// Helper para procesar el formato de texto de los pasos (ej: "**Título**: Descripción")
+// Helper para procesar el formato de texto de los pasos
 const parseStepContent = (text: string) => {
   const mdMatch = text.match(/\*\*(.*?)\*\*:?\s*(.*)/s);
   if (mdMatch) {
@@ -39,19 +48,93 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [transmissionId, setTransmissionId] = useState<string>('');
   
-  // PREMIUM STATE: Por defecto bloqueado para simular el flujo freemium
+  // Auth & Premium State
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
-  const [unlocking, setUnlocking] = useState(false);
+  const [unlocking, setUnlocking] = useState(false); // Loading state for unlock button
+  const [session, setSession] = useState<any>(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
-  const handleUnlock = () => {
-    setUnlocking(true);
-    // Simular proceso de pago/desbloqueo
-    setTimeout(() => {
-        setIsPremiumUnlocked(true);
-        setUnlocking(false);
-    }, 2000);
+  // 1. Efecto para detectar sesión y cambios de Auth
+  useEffect(() => {
+    if (!supabase) return; // Modo Demo
+
+    // Obtener sesión inicial
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
+      setSession(session);
+      checkPremiumStatus(session);
+    });
+
+    // Suscribirse a cambios (Login exitoso, Logout, etc.)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+      setSession(session);
+      checkPremiumStatus(session);
+      
+      // Si el modal estaba abierto y el usuario se loguea, cerramos modal y procedemos
+      if (session && isLoginModalOpen) {
+         setIsLoginModalOpen(false);
+         // Opcional: Auto-trigger checkout? Mejor dejar que el usuario haga click de nuevo 
+         // o llamar handleUnlock automáticamente si queremos ser agresivos.
+         // Por UX, mejor cerrar modal y dejar que el usuario vea que ya está logueado.
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [isLoginModalOpen]);
+
+  // Helper para verificar si el usuario ya es premium (desde DB Profile)
+  const checkPremiumStatus = async (currentSession: any) => {
+    if (currentSession?.user) {
+        // Consultar perfil para ver si ya pagó
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('is_premium')
+            .eq('id', currentSession.user.id)
+            .single();
+        
+        if (data && data.is_premium) {
+            setIsPremiumUnlocked(true);
+        }
+    }
   };
 
+  // 2. Lógica del Botón Desbloquear
+  const handleUnlockClick = () => {
+    setUnlocking(true);
+
+    // CASO A: No hay sesión (o Modo Demo sin Supabase)
+    if (!session) {
+        if (!supabase) {
+            // Fallback para modo demo local sin backend
+            console.warn("Modo Demo: Simulando desbloqueo...");
+            setTimeout(() => {
+                setIsPremiumUnlocked(true);
+                setUnlocking(false);
+            }, 1500);
+            return;
+        }
+        
+        // Abrir Modal de Login
+        setIsLoginModalOpen(true);
+        setUnlocking(false);
+        return;
+    }
+
+    // CASO B: Usuario Logueado -> Ir a Checkout
+    proceedToCheckout(session.user.email);
+  };
+
+  const proceedToCheckout = (email: string) => {
+      // Construir URL de Lemon Squeezy con email pre-rellenado
+      // Documentación: https://docs.lemonsqueezy.com/help/checkout/prefilling-checkout-fields
+      const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${encodeURIComponent(email)}`;
+      
+      console.log("Redirigiendo a pasarela de pago...", checkoutUrl);
+      window.location.href = checkoutUrl;
+  };
+
+  // 3. Lógica de Envío de Email (Existente)
   const handleSendEmail = async () => {
     if (emailStatus === 'sending') return;
     
@@ -117,6 +200,15 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
+      
+      {/* Login Modal Integration */}
+      <LoginModal 
+         isOpen={isLoginModalOpen} 
+         onClose={() => setIsLoginModalOpen(false)}
+         onSuccess={() => {}} // Manejado por onAuthStateChange
+         prefilledEmail={userEmail} // Usamos el email del form inicial
+      />
+
       {/* Header Stats - SIEMPRE VISIBLE (GANCHO) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700 p-6 rounded-2xl flex items-center justify-between">
@@ -268,15 +360,15 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             {!isPremiumUnlocked && (
                 <div className="absolute inset-x-0 bottom-0 top-1/3 z-30 bg-gradient-to-t from-slate-950 via-slate-900/90 to-transparent flex flex-col items-center justify-center pt-10">
                     <button 
-                        onClick={handleUnlock}
+                        onClick={handleUnlockClick}
                         disabled={unlocking}
                         className="group relative px-8 py-4 bg-white text-slate-950 font-bold rounded-xl shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-all transform hover:scale-105 active:scale-95 flex items-center gap-3 overflow-hidden"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-white to-cyan-400 opacity-20 group-hover:animate-pulse"></div>
                         {unlocking ? (
                              <>
-                                <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
-                                AUTORIZANDO...
+                                <Loader2 className="animate-spin text-slate-950" size={20} />
+                                VERIFICANDO CREDENCIALES...
                              </>
                         ) : (
                              <>
