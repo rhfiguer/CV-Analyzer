@@ -7,9 +7,6 @@ import { MISSIONS } from '../constants';
 import { supabase } from '../services/supabase';
 import { LoginModal } from './LoginModal';
 
-// ------------------------------------------------------------------
-// CONFIGURACIÓN DE PAGO (LEMON SQUEEZY)
-// ------------------------------------------------------------------
 const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
 
 interface ResultPanelProps {
@@ -39,8 +36,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 }) => {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [transmissionId, setTransmissionId] = useState<string>('');
-  
-  // Auth & Premium State
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
   const [unlocking, setUnlocking] = useState(false); 
   const [verifyingPayment, setVerifyingPayment] = useState(false);
@@ -49,7 +44,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const [showRedirectModal, setShowRedirectModal] = useState(false);
   
   const pollingAttempts = useRef(0);
-  const maxPollingAttempts = 15; // 45 segundos de chequeo intenso
+  const maxPollingAttempts = 15;
 
   useEffect(() => {
     if (!supabase) return;
@@ -74,18 +69,15 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const checkAndPoll = async (currentSession: any) => {
       const isPremium = await checkPremiumStatus(currentSession);
       if (!isPremium) {
-          console.log(">> Iniciando Polling de seguridad...");
           startPolling(currentSession);
       }
   };
 
   const startPolling = (currentSession: any) => {
-      if (pollingAttempts.current > 0) return; // Evitar múltiples loops
-      
+      if (pollingAttempts.current > 0) return;
       const interval = setInterval(async () => {
           pollingAttempts.current += 1;
           const isNowPremium = await checkPremiumStatus(currentSession);
-          
           if (isNowPremium || pollingAttempts.current >= maxPollingAttempts) {
               clearInterval(interval);
           }
@@ -93,37 +85,56 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   };
 
   const handleManualVerification = async () => {
-      if (!session) return;
+      if (!session) {
+          setIsLoginModalOpen(true);
+          return;
+      }
       setVerifyingPayment(true);
       const isPremium = await checkPremiumStatus(session);
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 1200));
       setVerifyingPayment(false);
       
       if (!isPremium) {
-          alert("Aún no detectamos el pago. Si acabas de pagar en Lemon Squeezy, por favor espera 10-15 segundos para que la señal llegue desde sus servidores a nuestra base estelar.");
+          alert(`Sistemas aún bloqueados. 
+          
+RECOMENDACIÓN TÁCTICA:
+1. Verifica que el correo usado en Lemon Squeezy sea EXACTAMENTE: ${session.user.email}
+2. Si hubo un error al escribirlo en la pasarela, contacta a soporte.
+3. El proceso puede tardar hasta 30 segundos en sincronizarse.`);
       }
   };
 
-  // VERIFICACIÓN PURA (Sin caché)
   const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
     if (currentSession?.user) {
         try {
-            // Buscamos directamente en la tabla, forzando email en minúsculas
-            const { data, error } = await supabase
+            // VERIFICACIÓN DUAL (Profiles y Leads como backup)
+            const { data: profile } = await supabase
                 .from('profiles')
                 .select('is_premium')
                 .eq('id', currentSession.user.id)
                 .single();
             
-            if (error) return false;
+            if (profile?.is_premium) {
+                setIsPremiumUnlocked(true);
+                return true;
+            }
 
-            if (data && data.is_premium) {
-                console.log("🚀 SISTEMAS DESBLOQUEADOS: Perfil Premium confirmado.");
+            // Si el perfil no lo tiene, chequeamos si el lead fue marcado (fallback de email)
+            const { data: lead } = await supabase
+                .from('cosmic_cv_leads')
+                .select('is_premium')
+                .ilike('email', currentSession.user.email)
+                .limit(1)
+                .maybeSingle();
+
+            if (lead?.is_premium) {
+                // Sincronizamos el perfil si el lead ya está pagado
+                await supabase.from('profiles').update({ is_premium: true }).eq('id', currentSession.user.id);
                 setIsPremiumUnlocked(true);
                 return true;
             }
         } catch (e) {
-            console.error("Error verificando premium:", e);
+            console.error("Error en radar premium:", e);
         }
     }
     return false;
@@ -214,7 +225,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Analysis */}
       <div className="glass-panel p-6 rounded-2xl border-l-4 border-purple-500">
         <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
            <Navigation size={20} className="text-purple-400"/> Análisis de Trayectoria
@@ -222,7 +232,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <p className="text-slate-300 leading-relaxed">{result.analisis_mision}</p>
       </div>
 
-      {/* Grid results */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="relative bg-slate-900/40 rounded-xl p-5 border border-green-900/50 overflow-hidden">
           <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2">
@@ -260,7 +269,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Flight Plan */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 border border-slate-700 relative overflow-hidden">
         <h3 className="text-lg font-bold text-white mb-8 uppercase tracking-widest text-center">Plan de Vuelo</h3>
         <div className={`grid gap-4 ${gridColsClass}`}>
