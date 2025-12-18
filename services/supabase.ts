@@ -2,10 +2,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { MissionId } from '../types';
 
-/**
- * CONFIGURACIÓN DE SUPABASE
- * Soporta Vite (import.meta.env) y Node-like (process.env)
- */
 const getEnv = (key: string) => {
   return (import.meta as any).env?.[key] || (process as any).env?.[key] || '';
 };
@@ -18,50 +14,37 @@ export let supabase: any = null;
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
   try {
     supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.debug("🔌 Supabase Client: Inicializado con éxito.");
   } catch (e) {
-    console.error("❌ Fallo al inicializar cliente Supabase:", e);
+    console.error("❌ Error Supabase Init:", e);
   }
-} else {
-  console.warn("⚠️ Supabase NO configurado o variables faltantes. Operando en modo DEMO.");
 }
 
-/**
- * Guarda un lead o lo actualiza si ya existe.
- * Ajustado a la estructura de tabla real: name, email, mission_id, marketing_consent
- */
 export const saveLead = async (
   name: string, 
   email: string, 
   marketingConsent: boolean,
   missionId?: MissionId | null
 ) => {
+  if (!supabase) return;
+  
   const normalizedEmail = email.toLowerCase().trim();
-
-  if (!supabase) {
-    console.warn("🚧 MOCK DB: No hay conexión a Supabase. Datos:", { name, normalizedEmail, missionId });
-    return;
-  }
 
   try {
     const { error } = await supabase
       .from('cosmic_cv_leads')
-      .upsert(
-        { 
-          email: normalizedEmail, 
-          name, 
-          marketing_consent: marketingConsent,
-          mission_id: missionId || null
-        },
-        { onConflict: 'email' }
-      );
+      .upsert({ 
+        email: normalizedEmail, 
+        name, 
+        marketing_consent: marketingConsent,
+        mission_id: missionId || null
+      }, { onConflict: 'email' });
 
     if (error) {
-      console.error("❌ Error grabando lead en DB:", error.message);
-      throw error;
+      console.error("❌ Error DB Upsert:", error.message);
+    } else {
+      console.log("✅ Lead sincronizado (upsert).");
     }
-    console.log("✅ Lead sincronizado correctamente en cosmic_cv_leads.");
   } catch (err) {
-    console.error("💥 Fallo crítico al intentar persistir el lead:", err);
+    console.error("💥 Error persistencia:", err);
   }
 };

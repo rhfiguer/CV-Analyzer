@@ -4,13 +4,12 @@ import { createClient } from '@supabase/supabase-js';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Inicialización de Supabase en Servidor (Usa Service Role para saltar RLS y asegurar el registro)
+// Inicialización de Supabase en Servidor
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey) : null;
 
 export default async function handler(req, res) {
-  // 1. Configuración CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -38,27 +37,26 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Configuration Error: Missing API Key' });
     }
 
-    // --- REGISTRO DE LEAD EN EL SERVIDOR (AJUSTADO AL ESQUEMA REAL) ---
+    // --- REGISTRO DE LEAD CON UPSERT (LÓGICA DEFINITIVA) ---
     if (supabase && email) {
       try {
-        console.log(`[DB] Guardando lead para ${email}...`);
+        const cleanEmail = email.toLowerCase().trim();
+        console.log(`[DB] Sincronizando lead (upsert) para ${cleanEmail}...`);
+        
         const { error: dbError } = await supabase
           .from('cosmic_cv_leads')
           .upsert({
-            email: email.toLowerCase().trim(),
+            email: cleanEmail,
             name: name,
             marketing_consent: marketingConsent || false,
             mission_id: missionId
-            // 'updated_at' eliminado por no existir en la tabla
           }, { onConflict: 'email' });
 
-        if (dbError) console.error("[DB ERROR] Error guardando lead:", dbError.message);
-        else console.log(`[DB SUCCESS] Lead registrado correctamente.`);
+        if (dbError) console.error("[DB ERROR] Fallo en upsert:", dbError.message);
+        else console.log(`[DB SUCCESS] Lead sincronizado correctamente.`);
       } catch (dbEx) {
-        console.error("[DB CRITICAL] Fallo en conexión con Supabase:", dbEx.message);
+        console.error("[DB CRITICAL] Error de conexión:", dbEx.message);
       }
-    } else {
-      console.warn("[DB WARNING] Supabase no configurado en servidor o email ausente.");
     }
 
     if (!fileBase64 || !missionId || !name) {
@@ -68,37 +66,14 @@ export default async function handler(req, res) {
     // Contexto de misión
     let missionContext = "";
     switch (missionId) {
-      case 'GLOBAL':
-        missionContext = "Mercado Anglosajón y Estados Unidos. Alto nivel de competencia, enfoque en logros cuantificables y formato ATS.";
-        break;
-      case 'EUROPE':
-        missionContext = "Mercado Europeo y Nórdico. Enfoque en equilibrio vida-trabajo, habilidades blandas, idiomas y adaptabilidad cultural.";
-        break;
-      case 'LOCAL':
-        missionContext = "Mercado Local y Latinoamérica. Relaciones interpersonales, lealtad y experiencia regional relevante.";
-        break;
-      case 'EXPLORATION':
-        missionContext = "Trabajo Remoto y Nómada Digital. Autonomía, gestión del tiempo, herramientas asíncronas y comunicación digital.";
-        break;
-      default:
-        missionContext = "Mercado General Tecnológico.";
+      case 'GLOBAL': missionContext = "Mercado Anglosajón/USA. Formato ATS, logros cuantificables."; break;
+      case 'EUROPE': missionContext = "Mercado Europeo. Habilidades blandas y adaptabilidad."; break;
+      case 'LOCAL': missionContext = "Mercado Local/Latam. Relaciones y experiencia regional."; break;
+      case 'EXPLORATION': missionContext = "Remoto/Nómada Digital. Autonomía y herramientas digitales."; break;
+      default: missionContext = "Mercado General.";
     }
 
-    const systemInstruction = `
-      Eres un experto en reclutamiento intergaláctico y optimización de carreras con rango de Gran Almirante.
-      Tu tarea es analizar el CV de un aspirante (Comandante ${name}) para la misión: ${missionContext}.
-      
-      Analiza el documento proporcionado y genera un reporte estratégico en formato JSON estricto.
-      El tono debe ser profesional pero con sutiles referencias espaciales/sci-fi.
-      Refierete al usuario por su nombre: ${name}.
-      Sé crítico pero motivador.
-
-      INSTRUCCIONES CRÍTICAS DE FORMATO:
-      1. 'nivel_actual': DEBE ser un TÍTULO CORTO de rango (MÁXIMO 3 a 5 palabras). Ej: "Comandante Senior", "Estratega Táctico".
-      2. 'probabilidad_exito': DEBE ser un número ENTERO entre 0 y 100. (Ejemplo: 85, NO 0.85).
-      3. 'analisis_mision': Resumen del perfil y justificación del rango.
-      4. 'puntos_fuertes' y 'brechas_criticas': Items concisos.
-    `;
+    const systemInstruction = `Eres un Almirante experto en reclutamiento intergaláctico. Analiza el CV de ${name} para la misión: ${missionContext}. Refiérete a él por su nombre. Sé táctico, crítico y motiva al despegue. Devuelve JSON estricto.`;
 
     const responseSchema = {
       type: Type.OBJECT,
@@ -113,41 +88,21 @@ export default async function handler(req, res) {
       required: ["nivel_actual", "probabilidad_exito", "analisis_mision", "puntos_fuertes", "brechas_criticas", "plan_de_vuelo"],
     };
 
-    let response;
-    
-    try {
-      response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
-            { text: `Analiza este CV para el Comandante ${name}.` }
-          ]
-        },
-        config: { systemInstruction, responseMimeType: "application/json", responseSchema },
-      });
-    } catch (primaryError) {
-      console.warn("Fallo modelo primario:", primaryError.message);
-      response = await ai.models.generateContent({
-            model: "gemini-3-pro-preview",
-            contents: {
-              parts: [
-                { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
-                { text: `Analiza este CV para el Comandante ${name}.` }
-              ]
-            },
-            config: { systemInstruction, responseMimeType: "application/json", responseSchema },
-        });
-    }
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: {
+        parts: [
+          { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
+          { text: `Analiza este CV para ${name}.` }
+        ]
+      },
+      config: { systemInstruction, responseMimeType: "application/json", responseSchema },
+    });
 
-    const responseText = response?.text;
-    if (!responseText) throw new Error("La IA no devolvió respuesta.");
-
-    return res.status(200).json(JSON.parse(responseText));
+    return res.status(200).json(JSON.parse(response.text));
 
   } catch (error) {
     console.error("[ERROR CRÍTICO]:", error);
-    const statusCode = error.status || 500;
-    return res.status(statusCode).json({ error: error.message || "Fallo en el motor de análisis." });
+    return res.status(500).json({ error: error.message });
   }
 }
