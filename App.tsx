@@ -8,7 +8,7 @@ import { LandingPage } from './components/LandingPage';
 import { Navbar } from './components/Navbar';
 import { analyzeCV } from './services/geminiService';
 import { supabase } from './services/supabase';
-import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket } from 'lucide-react';
+import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, CheckCircle2, User } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 3;
 const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -40,8 +40,8 @@ const App: React.FC = () => {
       if (currentSession?.user) {
         setFormData(prev => ({
           ...prev,
-          name: currentSession.user.user_metadata.full_name || prev.name,
-          email: currentSession.user.email || prev.email
+          name: currentSession.user.user_metadata.full_name || '',
+          email: currentSession.user.email || ''
         }));
       }
     });
@@ -66,10 +66,6 @@ const App: React.FC = () => {
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({ ...prev, email: e.target.value }));
-  };
-
-  const handleMarketingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({ ...prev, marketingConsent: e.target.checked }));
   };
 
   const handleMissionSelect = (id: MissionId) => {
@@ -160,38 +156,55 @@ const App: React.FC = () => {
 
               <div className="p-6 md:p-10">
                 {step === 1 && (
-                  <div className="space-y-6">
+                  <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                     <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                       <span className="text-cyan-500">01.</span> Identificación del Piloto
                     </h2>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold pl-1">Nombre</label>
-                        <input type="text" value={formData.name} onChange={handleNameChange} placeholder="Tu nombre" className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none transition-all" autoFocus />
+                    
+                    {session ? (
+                      /* IDENTIDAD VERIFICADA - UI LIMPIA */
+                      <div className="bg-slate-900/60 border border-cyan-500/20 p-6 rounded-2xl flex items-center gap-5 shadow-inner">
+                         <div className="w-16 h-16 rounded-full border-2 border-cyan-500/50 overflow-hidden shrink-0">
+                           <img src={session.user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                         </div>
+                         <div className="flex-grow">
+                           <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest mb-1">Sesión Activa vía Google</p>
+                           <h3 className="text-lg font-bold text-white leading-tight">{session.user.user_metadata.full_name}</h3>
+                           <p className="text-sm text-slate-500">{session.user.email}</p>
+                         </div>
+                         <div className="text-green-500 bg-green-500/10 p-2 rounded-full">
+                           <CheckCircle2 size={24} />
+                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold pl-1">Email</label>
-                        <input type="email" value={formData.email} onChange={handleEmailChange} placeholder="tu@email.com" className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none transition-all" />
+                    ) : (
+                      /* INPUT MANUAL FALLBACK */
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold pl-1">Nombre Completo</label>
+                          <input type="text" value={formData.name} onChange={handleNameChange} placeholder="Ej: John Doe" className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none transition-all" autoFocus />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold pl-1">Correo de Contacto</label>
+                          <input type="email" value={formData.email} onChange={handleEmailChange} placeholder="tu@email.com" className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none transition-all" />
+                        </div>
                       </div>
-                      <div className="space-y-2 pt-2">
-                        <label className="flex items-start gap-3 cursor-pointer">
-                          <input type="checkbox" checked={privacyConsent} onChange={(e) => setPrivacyConsent(e.target.checked)} className="mt-1" />
-                          <span className="text-xs text-slate-400">Acepto el procesamiento de mis datos.</span>
-                        </label>
-                        <label className="flex items-start gap-3 cursor-pointer">
-                          <input type="checkbox" checked={formData.marketingConsent} onChange={handleMarketingChange} className="mt-1" />
-                          <span className="text-xs text-slate-400">Deseo recibir actualizaciones de carrera.</span>
-                        </label>
-                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 pt-2">
+                      <input type="checkbox" checked={privacyConsent} onChange={(e) => setPrivacyConsent(e.target.checked)} id="privacy" className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500" />
+                      <label htmlFor="privacy" className="text-xs text-slate-400 cursor-pointer hover:text-slate-300">Acepto los términos de servicio y política de privacidad.</label>
                     </div>
+
                     <div className="flex justify-end pt-4">
-                      <button onClick={nextStep} disabled={!privacyConsent || !formData.name || !formData.email} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50 transition-all hover:bg-slate-100 active:scale-95">Confirmar ID <ChevronRight size={18} className="inline ml-1"/></button>
+                      <button onClick={nextStep} disabled={!privacyConsent || !formData.name || !formData.email} className="group px-8 py-4 bg-white text-slate-950 font-black rounded-2xl disabled:opacity-50 transition-all hover:bg-slate-100 active:scale-95 shadow-xl flex items-center gap-2">
+                        SIGUIENTE <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform"/>
+                      </button>
                     </div>
                   </div>
                 )}
 
                 {step === 2 && (
-                  <div className="space-y-4">
+                  <div className="space-y-4 animate-[fadeIn_0.3s_ease-out]">
                     <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                       <span className="text-cyan-500">02.</span> Selección de Trayectoria
                     </h2>
@@ -201,60 +214,66 @@ const App: React.FC = () => {
                       ))}
                     </div>
                     <div className="flex justify-between pt-6">
-                      <button onClick={() => setStep(1)} className="text-slate-500 hover:text-white transition-colors text-sm font-bold uppercase tracking-widest">Atrás</button>
-                      <button onClick={nextStep} disabled={!formData.mission} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50 transition-all hover:bg-slate-100 active:scale-95">Confirmar Rumbo <ChevronRight size={18} className="inline ml-1"/></button>
+                      <button onClick={() => setStep(1)} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Atrás</button>
+                      <button onClick={nextStep} disabled={!formData.mission} className="px-8 py-4 bg-white text-slate-950 font-black rounded-2xl disabled:opacity-50 transition-all hover:bg-slate-100 active:scale-95 shadow-xl flex items-center gap-2">
+                        CONFIRMAR RUMBO <ChevronRight size={18} />
+                      </button>
                     </div>
                   </div>
                 )}
 
                 {step === 3 && !loading && !result && (
-                  <div className="space-y-6">
+                  <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                     <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                       <span className="text-cyan-500">03.</span> Carga de Combustible (CV)
                     </h2>
-                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition-all ${formData.file ? 'border-green-500/50 bg-green-500/5' : 'border-slate-700 hover:border-cyan-500/50'}`}>
+                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all ${formData.file ? 'border-green-500/50 bg-green-500/5' : 'border-slate-700 hover:border-cyan-500/50 hover:bg-slate-900/40'}`}>
                       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="application/pdf" />
                       {formData.file ? (
                         <div className="text-center">
-                          <FileText size={48} className="text-green-400 mb-4 mx-auto" />
-                          <p className="text-lg font-medium text-green-300">{formData.file.name}</p>
+                          <FileText size={56} className="text-green-400 mb-4 mx-auto" />
+                          <p className="text-lg font-bold text-white">{formData.file.name}</p>
+                          <p className="text-xs text-slate-500 mt-1 uppercase tracking-widest">Listo para el despegue</p>
                         </div>
                       ) : (
                         <div className="text-center">
-                          <UploadCloud size={48} className="text-cyan-400 mb-4 mx-auto" />
-                          <p className="text-lg font-medium text-slate-200">Arrastra tu CV (PDF)</p>
+                          <UploadCloud size={56} className="text-cyan-500 mb-4 mx-auto opacity-80" />
+                          <p className="text-lg font-bold text-slate-200">Sube tu CV en PDF</p>
+                          <p className="text-xs text-slate-500 mt-1">Máximo 3MB</p>
                         </div>
                       )}
                     </div>
                     <div className="flex justify-between pt-6">
-                      <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors text-sm font-bold uppercase tracking-widest">Atrás</button>
-                      <button onClick={startAnalysis} disabled={!formData.file} className="px-8 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 transition-all hover:scale-105 active:scale-95">INICIAR DESPEGUE 🚀</button>
+                      <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Atrás</button>
+                      <button onClick={startAnalysis} disabled={!formData.file} className="px-10 py-5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-black rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.3)] disabled:opacity-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-3">
+                        <Rocket size={20} /> INICIAR ANÁLISIS 🚀
+                      </button>
                     </div>
                   </div>
                 )}
 
                 {loading && (
-                  <div className="py-20 flex flex-col items-center justify-center text-center">
-                    <div className="relative w-20 h-20 mb-8">
+                  <div className="py-24 flex flex-col items-center justify-center text-center">
+                    <div className="relative w-24 h-24 mb-10">
                       <div className="absolute inset-0 border-4 border-slate-800 rounded-full"></div>
                       <div className="absolute inset-0 border-4 border-cyan-500 rounded-full border-t-transparent animate-spin"></div>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <Rocket size={32} className="text-cyan-400" />
+                        <Rocket size={36} className="text-cyan-400" />
                       </div>
                     </div>
-                    <h3 className="text-2xl font-bold text-white mb-2">Analizando Atmósfera...</h3>
-                    <p className="text-slate-500 text-sm animate-pulse">Sincronizando con satélites IA</p>
+                    <h3 className="text-3xl font-black text-white mb-3 tracking-tight">Analizando Trayectoria...</h3>
+                    <p className="text-slate-500 text-sm font-bold animate-pulse tracking-widest uppercase">Sincronizando con satélites de IA</p>
                   </div>
                 )}
 
                 {step === 4 && result && (
-                   <ResultPanel result={result} onReset={resetMission} userName={formData.name} userEmail={formData.email} missionId={formData.mission!} />
+                   <ResultPanel result={result} onReset={resetMission} userName={formData.name} missionId={formData.mission!} />
                 )}
 
                 {error && (
                   <div className="mt-6 bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl flex items-center gap-3">
                     <AlertCircle size={20} className="flex-shrink-0" />
-                    <p className="text-sm">{error}</p>
+                    <p className="text-sm font-medium">{error}</p>
                   </div>
                 )}
               </div>
