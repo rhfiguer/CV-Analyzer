@@ -1,20 +1,20 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
-import { Globe, LogOut, User, Loader2, Sparkles } from 'lucide-react';
+import { Globe, LogOut, User, Loader2, Sparkles, ShieldCheck } from 'lucide-react';
 import { LoginModal } from './LoginModal';
+import { useSubscriptionStatus } from '../hooks/useSubscription';
 
 export const Navbar: React.FC = () => {
   const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const { isPremium, loading: subLoading } = useSubscriptionStatus();
 
   useEffect(() => {
     if (!supabase) return;
 
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
-      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
@@ -45,14 +45,19 @@ export const Navbar: React.FC = () => {
 
         {/* AUTH STATE */}
         <div className="flex items-center gap-4">
-          {loading ? (
-            <Loader2 size={18} className="text-slate-500 animate-spin" />
-          ) : session ? (
+          {session ? (
             <div className="flex items-center gap-3 pl-3 py-1.5 pr-1.5 bg-slate-900/50 border border-slate-800 rounded-full">
-               <span className="hidden md:block text-xs font-bold text-slate-300 px-1">
-                 {session.user.user_metadata.full_name || session.user.email}
-               </span>
-               <div className="w-8 h-8 rounded-full border-2 border-cyan-500/50 overflow-hidden bg-slate-800">
+               <div className="flex flex-col items-end px-1">
+                 <span className="hidden md:block text-[10px] font-black text-slate-300 uppercase tracking-tighter">
+                   {session.user.user_metadata.full_name || session.user.email}
+                 </span>
+                 {isPremium && (
+                   <span className="flex items-center gap-1 text-[9px] font-black text-yellow-500 bg-yellow-500/10 px-1.5 rounded-sm uppercase tracking-widest border border-yellow-500/20">
+                     <ShieldCheck size={8} /> PRO
+                   </span>
+                 )}
+               </div>
+               <div className="w-8 h-8 rounded-full border-2 border-cyan-500/50 overflow-hidden bg-slate-800 relative">
                   {session.user.user_metadata.avatar_url ? (
                     <img src={session.user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (

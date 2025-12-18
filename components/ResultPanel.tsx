@@ -7,6 +7,7 @@ import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
 import { supabase } from '../services/supabase';
 import { LoginModal } from './LoginModal';
+import { useSubscriptionStatus } from '../hooks/useSubscription';
 
 const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
 
@@ -34,64 +35,25 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   missionId 
 }) => {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const { isPremium: isPremiumUnlocked, refresh: refreshSub } = useSubscriptionStatus();
   
   useEffect(() => {
     if (!supabase) return;
 
-    const initialize = async () => {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
-      if (currentSession) await checkEntitlement(currentSession);
-    };
+    });
 
-    initialize();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
-      if (newSession) {
-          setIsLoginModalOpen(false);
-          await checkEntitlement(newSession);
-      }
-      if (event === 'SIGNED_OUT') setIsPremiumUnlocked(false);
+      if (newSession) setIsLoginModalOpen(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const checkEntitlement = async (currentSession: any): Promise<boolean> => {
-    if (!currentSession?.user || !supabase) return false;
-    
-    try {
-        const { data: subscription } = await supabase
-            .from('subscriptions')
-            .select('status')
-            .eq('user_id', currentSession.user.id)
-            .in('status', ['active', 'on_trial'])
-            .maybeSingle();
-        
-        if (subscription) {
-            setIsPremiumUnlocked(true);
-            return true;
-        }
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('is_premium')
-            .eq('id', currentSession.user.id)
-            .single();
-
-        if (profile?.is_premium) {
-            setIsPremiumUnlocked(true);
-            return true;
-        }
-
-    } catch (e: any) {}
-    return false;
-  };
 
   const handleUnlockAction = () => {
     if (!session) {
@@ -113,15 +75,14 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const handleManualVerification = async () => {
     setVerifyingPayment(true);
     try {
-      const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
-      if (refreshedSession) {
-        setSession(refreshedSession);
-        const hasPremium = await checkEntitlement(refreshedSession);
-        if (hasPremium) {
-          alert("✅ ¡Radar Sincronizado! Acceso Premium habilitado.");
-        } else {
-          alert("🛰️ Radar de Pago: No detectamos transacciones recientes vinculadas a esta cuenta.\n\nNota: Si acabas de pagar, espera 30 segundos y reintenta.");
-        }
+      await refreshSub();
+      // Pequeño retardo para UI
+      await new Promise(r => setTimeout(r, 1000));
+      
+      if (isPremiumUnlocked) {
+        alert("✅ ¡Radar Sincronizado! Acceso Premium habilitado.");
+      } else {
+        alert("🛰️ Radar de Pago: No detectamos transacciones recientes vinculadas a esta cuenta.\n\nNota: Si acabas de pagar, espera 30 segundos y reintenta.");
       }
     } catch (err) {
       alert("Error en la conexión con la base.");
@@ -280,12 +241,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             </button>
         )}
       </div>
-      
-      {isPremiumUnlocked && (
-        <p className="text-center text-slate-500 text-[9px] uppercase tracking-widest font-bold">
-          Enviando reporte táctico a: {session?.user?.email}
-        </p>
-      )}
     </div>
   );
 };
