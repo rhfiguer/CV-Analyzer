@@ -47,14 +47,12 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     const syncSessionAndRun = async () => {
       console.log("🛰️ [AUTH_SYNC] Iniciando sincronización de terminal...");
       
-      // 1. Primer intento rápido
       let { data: { session: currentSession } } = await supabase.auth.getSession();
       let detectedEmail = currentSession?.user?.email;
 
-      // 2. Patrón de Reintento para Hidratación de LocalStorage
       if (!detectedEmail) {
           console.log("⏳ [AUTH_SYNC] Sesión no detectada. Esperando hidratación de LocalStorage...");
-          await new Promise(r => setTimeout(r, 800)); // Delay táctico de seguridad
+          await new Promise(r => setTimeout(r, 800)); 
           
           const retry = await supabase.auth.getSession();
           currentSession = retry.data.session;
@@ -64,11 +62,8 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       console.log("✅ [AUTH_SYNC] USUARIO FINAL DETECTADO:", detectedEmail || "ANÓNIMO");
       setSession(currentSession);
 
-      // 3. Ejecutar persistencia de Lead (Fail-Safe)
-      // Usamos el email detectado si existe, si no el que viene por props
       saveLead(userName, detectedEmail || userEmail, true, missionId as any).catch(() => {});
 
-      // 4. Verificar derechos premium si hay sesión
       if (currentSession) {
           await checkEntitlement(currentSession);
       }
@@ -76,7 +71,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
     syncSessionAndRun();
 
-    // Suscripción a cambios de auth para actualizaciones en tiempo real (login desde modal)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, newSession: any) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           console.log(`[AUTH_EVENT] Evento detectado: ${event}. Actualizando estado...`);
@@ -95,10 +89,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     return () => subscription.unsubscribe();
   }, []);
 
-  /**
-   * Lógica de Verificación (Self-Healing)
-   * Consulta el Ledger y actualiza el perfil si encuentra un pago.
-   */
   const checkEntitlement = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
     
@@ -106,8 +96,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     console.log(`[ENTITLEMENT] Escaneando privilegios para: ${email}`);
 
     try {
-        // 1. Check Perfil (Rápido)
-        const { data: profile, error: profileErr } = await supabase
+        const { data: profile } = await supabase
             .from('profiles')
             .select('is_premium, id')
             .eq('id', currentSession.user.id)
@@ -119,18 +108,15 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             return true;
         }
 
-        // 2. Check Ledger (Verdad Absoluta)
-        console.log(`[ENTITLEMENT] Perfil estándar. Buscando en Libro Mayor (premium_purchases)...`);
+        console.log(`[ENTITLEMENT] Perfil estándar. Buscando en Libro Mayor...`);
         
-        const { data: purchases, error: ledgerErr } = await supabase
+        const { data: purchases } = await supabase
             .from('premium_purchases')
             .select('email, lemon_order_id')
             .ilike('email', email);
 
         if (purchases && purchases.length > 0) {
-            console.log(`🚀 [SELF-HEALING] ¡Pago encontrado en Ledger (Order ID: ${purchases[0].lemon_order_id})!`);
-            
-            // Sincronización forzada del perfil
+            console.log(`🚀 [SELF-HEALING] ¡Pago encontrado en Ledger!`);
             const { error: syncError } = await supabase
                 .from('profiles')
                 .update({ 
@@ -146,27 +132,49 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                 return true;
             }
         }
-
-        console.log("[ENTITLEMENT] No se detectaron compras Premium activas.");
     } catch (e: any) {
         console.error("❌ [ENTITLEMENT] Error crítico durante escaneo:", e.message);
     }
     return false;
   };
 
+  /**
+   * REEMPLAZO: handleManualVerification con refreshSession forzado
+   */
   const handleManualVerification = async () => {
-      if (!session) {
-          setIsLoginModalOpen(true);
-          return;
-      }
-      setVerifyingPayment(true);
-      const hasPremium = await checkEntitlement(session);
-      await new Promise(r => setTimeout(r, 1500));
-      setVerifyingPayment(false);
+    setVerifyingPayment(true);
+    try {
+      console.log("📡 [VERIFY] Forzando actualización de sesión...");
       
-      if (!hasPremium) {
-          alert(`🛰️ Radar de Pago: No detectamos transacciones para ${session.user.email}.\n\nSi acabas de pagar, espera 15-30 segundos e intenta de nuevo.`);
+      // EL SECRETO: Forzar actualización de sesión contra el servidor
+      // Esto arregla el error "You haven't signed in yet" hidratando el cliente
+      const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession();
+
+      if (error || !refreshedSession) {
+        console.error("❌ No se pudo recuperar la sesión:", error);
+        alert("⚠️ Radar de Identidad: No detectamos tu sesión activa. Por favor, asegúrate de haber abierto el enlace de acceso enviado a tu correo.");
+        setVerifyingPayment(false);
+        return;
       }
+
+      console.log("✅ Sesión recuperada para:", refreshedSession.user.email);
+      setSession(refreshedSession);
+
+      // Con la sesión fresca y el cliente autorizado, ejecutamos la verificación
+      const hasPremium = await checkEntitlement(refreshedSession);
+      
+      if (hasPremium) {
+        alert("✅ ¡Verificación completada! El radar detectó tu suscripción. Disfruta tu reporte, Comandante.");
+      } else {
+        alert(`🛰️ Radar de Pago: No detectamos transacciones para ${refreshedSession.user.email}.\n\nSi acabas de pagar, recuerda que Lemon Squeezy puede tardar unos segundos en sincronizar el pago. Intenta de nuevo en un momento.`);
+      }
+
+    } catch (err: any) {
+      console.error("Error manual verify:", err);
+      alert("💥 Error técnico al verificar. Por favor, contacta con soporte si el problema persiste.");
+    } finally {
+      setVerifyingPayment(false);
+    }
   };
 
   const handleUnlockClick = () => {
