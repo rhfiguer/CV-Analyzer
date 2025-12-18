@@ -37,15 +37,10 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 }) => {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(false);
-  const [unlocking, setUnlocking] = useState(false); 
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [showRedirectModal, setShowRedirectModal] = useState(false);
   
-  const pollingAttempts = useRef(0);
-  const maxPollingAttempts = 10; 
-
   useEffect(() => {
     if (!supabase) return;
 
@@ -57,6 +52,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setSession(session);
       if (event === 'SIGNED_IN' && session) {
+          console.log("[AUTH] Sesión iniciada. Escaneando privilegios...");
           setIsLoginModalOpen(false);
           await checkPremiumStatus(session);
       }
@@ -65,51 +61,60 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     return () => subscription.unsubscribe();
   }, []);
 
-  /**
-   * SINCRONIZACIÓN DE SEGURIDAD:
-   * 1. Revisa profiles.
-   * 2. Si no es premium, revisa leads (donde el webhook siempre graba).
-   * 3. Si está en leads, lo promociona a profile.
-   */
   const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
+    const email = currentSession.user.email;
+
+    console.log(`[RADAR] Iniciando escaneo de banda ancha para: ${email}`);
 
     try {
-        // Consultar Perfil
-        const { data: profile } = await supabase
+        // 1. Consultar Perfil (Tabla Profiles de tu esquema)
+        const { data: profile, error: profileErr } = await supabase
             .from('profiles')
-            .select('is_premium')
+            .select('is_premium, status, subscription_id')
             .eq('id', currentSession.user.id)
             .single();
         
         if (profile?.is_premium) {
+            console.log("✅ [RADAR] Acceso Premium ACTIVO en 'profiles'. Status:", profile.status);
             setIsPremiumUnlocked(true);
             return true;
         }
 
-        // Si no es premium en perfil, buscar en la "Caja Fuerte" de leads
-        const { data: lead } = await supabase
+        // 2. Fallback: Buscar en Leads (Donde el Webhook guarda el backup por email)
+        console.log(`[RADAR] Perfil estándar. Buscando registros de pago en base de leads...`);
+        const { data: lead, error: leadErr } = await supabase
             .from('cosmic_cv_leads')
-            .select('is_premium, ls_subscription_id')
-            .ilike('email', currentSession.user.email)
+            .select('is_premium, last_payment_status, ls_subscription_id')
+            .ilike('email', email)
             .maybeSingle();
 
         if (lead?.is_premium) {
-            console.log("🚀 Sincronizando acceso premium desde Leads...");
-            await supabase
+            console.log("🚀 [RADAR HIT] ¡Pago detectado en leads! Sincronizando perfil de usuario...");
+            
+            // Sincronizar 'profiles' con la estructura correcta
+            const { error: updateErr } = await supabase
                 .from('profiles')
                 .update({ 
                     is_premium: true, 
-                    status: 'paid', 
+                    status: lead.last_payment_status || 'paid', 
                     subscription_id: lead.ls_subscription_id 
                 })
                 .eq('id', currentSession.user.id);
             
+            if (updateErr) {
+                console.error("❌ [RADAR ERROR] Fallo al actualizar perfil:", updateErr.message);
+            } else {
+                console.log("✅ [RADAR] Perfil actualizado con éxito.");
+            }
+            
             setIsPremiumUnlocked(true);
             return true;
         }
+
+        console.log("[RADAR] No se detectaron transacciones premium para esta cuenta.");
     } catch (e) {
-        console.error("Error en escaneo premium:", e);
+        console.error("❌ [RADAR CRITICAL] Error durante el escaneo:", e);
     }
     return false;
   };
@@ -125,7 +130,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       setVerifyingPayment(false);
       
       if (!isPremium) {
-          alert(`🛰️ Radar: El acceso Premium no detectado.\n\nAsegúrate de usar el mismo email que en la compra: ${session.user.email}`);
+          alert(`🛰️ Radar: No detectamos el pago para ${session.user.email}.\n\nSi acabas de comprar, espera 30 segundos a que la señal llegue desde Lemon Squeezy e intenta de nuevo.`);
       }
   };
 

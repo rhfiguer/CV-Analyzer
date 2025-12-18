@@ -18,7 +18,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
+    console.log("[LS WEBHOOK] 📨 Notificación detectada.");
+
     if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET || !supabaseUrl || !supabaseServiceRoleKey) {
+      console.error("[LS WEBHOOK ERROR] Configuración de variables de entorno incompleta.");
       return res.status(500).json({ error: 'Server misconfiguration' });
     }
 
@@ -26,11 +29,13 @@ export default async function handler(req, res) {
     const rawBody = await getRawBody(req);
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
     
+    // Verificación de firma
     const hmac = crypto.createHmac('sha256', secret);
     const digest = Buffer.from(hmac.update(rawBody).digest('hex'), 'utf8');
     const signature = Buffer.from(req.headers['x-signature'] || '', 'utf8');
 
     if (!crypto.timingSafeEqual(digest, signature)) {
+      console.error("[LS WEBHOOK ERROR] Firma inválida.");
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
@@ -43,7 +48,8 @@ export default async function handler(req, res) {
     const status = attributes.status;
     const isTest = attributes.test_mode;
 
-    // Eventos que otorgan o modifican el estado Premium
+    console.log(`[LS WEBHOOK] ⚡ Evento: ${eventName} | Piloto: ${userEmail} | Status: ${status}`);
+
     const isValidEvent = [
       'order_created', 
       'subscription_created', 
@@ -51,44 +57,70 @@ export default async function handler(req, res) {
       'subscription_payment_success'
     ].includes(eventName);
     
-    if (!isValidEvent) return res.status(200).json({ message: 'Event ignored' });
+    if (!isValidEvent) {
+      console.log(`[LS WEBHOOK INFO] Evento ${eventName} no requiere acción de privilegios.`);
+      return res.status(200).json({ message: 'Event ignored' });
+    }
 
+    // Un pedido 'paid' o suscripción 'active'/'on_trial' otorga premium
     const isPremium = ['paid', 'active', 'on_trial'].includes(status) || (isTest && status === 'paid');
 
     if (isPremium && userEmail) {
-      console.log(`[LS WEBHOOK] ⚡ Procesando Premium para: ${userEmail}`);
-      
+      // Mapeo exacto según la imagen de la estructura de la tabla 'profiles'
       const premiumData = {
         is_premium: true,
         status: status,
         subscription_id: resourceId.toString(),
         customer_id: attributes.customer_id?.toString() || null,
-        variant_id: attributes.variant_id?.toString() || null
+        variant_id: attributes.variant_id?.toString() || null,
+        renews_at: attributes.renews_at || null // Sincronizado con tu esquema
       };
 
-      // 1. Intentar actualizar perfil (Si ya existe el usuario)
-      const { count: profileCount } = await supabase
+      console.log("[LS WEBHOOK DB] Datos preparados para inyección:", JSON.stringify(premiumData, null, 2));
+
+      // 1. Actualizar 'profiles' (Tabla principal de Auth)
+      console.log(`[LS WEBHOOK DB] Actualizando registro en 'profiles' para email: ${userEmail}`);
+      const { count: profileCount, error: profileError } = await supabase
         .from('profiles')
         .update(premiumData, { count: 'exact' })
         .ilike('email', userEmail);
 
-      // 2. SIEMPRE hacer UPSERT en leads para asegurar la persistencia del pago
-      await supabase
+      if (profileError) {
+        console.error(`[LS WEBHOOK DB ERROR] Tabla profiles: ${profileError.message}`);
+      } else {
+        console.log(`[LS WEBHOOK DB SUCCESS] Tabla profiles: ${profileCount} filas afectadas.`);
+      }
+
+      // 2. Backup en 'cosmic_cv_leads' (Nuestra caja fuerte de emails)
+      console.log(`[LS WEBHOOK DB] Realizando backup en 'cosmic_cv_leads'...`);
+      const { error: leadError } = await supabase
         .from('cosmic_cv_leads')
         .upsert({
           email: userEmail,
           is_premium: true,
           last_payment_status: status,
           ls_subscription_id: resourceId.toString(),
-          updated_at: new Date().toISOString()
+          // Si tienes renews_at en leads también, podrías añadirlo aquí
         }, { onConflict: 'email' });
 
-      return res.status(200).json({ success: true, profile_updated: (profileCount || 0) > 0 });
+      if (leadError) {
+        console.error(`[LS WEBHOOK DB ERROR] Tabla leads: ${leadError.message}`);
+      } else {
+        console.log(`[LS WEBHOOK DB SUCCESS] Tabla leads: Backup sincronizado.`);
+      }
+
+      return res.status(200).json({ 
+        success: true, 
+        applied: (profileCount || 0) > 0,
+        email: userEmail,
+        status: status
+      });
     }
 
-    return res.status(200).json({ success: true });
+    console.log(`[LS WEBHOOK INFO] El status '${status}' no cumple requisitos Premium.`);
+    return res.status(200).json({ success: true, isPremium: false });
   } catch (error) {
-    console.error("[LS WEBHOOK ERROR]:", error);
+    console.error("[LS WEBHOOK CRITICAL ERROR]:", error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
