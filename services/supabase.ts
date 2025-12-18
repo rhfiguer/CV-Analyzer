@@ -28,7 +28,7 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 
 /**
  * Guarda un lead o lo actualiza si ya existe.
- * Esta es la "Caja Fuerte" donde guardamos el interés antes y después del pago.
+ * Ajustado a la estructura de tabla real: name, email, mission_id, marketing_consent
  */
 export const saveLead = async (
   name: string, 
@@ -51,8 +51,7 @@ export const saveLead = async (
           email: normalizedEmail, 
           name, 
           marketing_consent: marketingConsent,
-          mission_id: missionId || null,
-          updated_at: new Date().toISOString()
+          mission_id: missionId || null
         },
         { onConflict: 'email' }
       );

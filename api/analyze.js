@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Configuration Error: Missing API Key' });
     }
 
-    // --- REGISTRO DE LEAD EN EL SERVIDOR (INFALIBLE) ---
+    // --- REGISTRO DE LEAD EN EL SERVIDOR (AJUSTADO AL ESQUEMA REAL) ---
     if (supabase && email) {
       try {
         console.log(`[DB] Guardando lead para ${email}...`);
@@ -48,8 +48,8 @@ export default async function handler(req, res) {
             email: email.toLowerCase().trim(),
             name: name,
             marketing_consent: marketingConsent || false,
-            mission_id: missionId,
-            updated_at: new Date().toISOString()
+            mission_id: missionId
+            // 'updated_at' eliminado por no existir en la tabla
           }, { onConflict: 'email' });
 
         if (dbError) console.error("[DB ERROR] Error guardando lead:", dbError.message);
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
     
     try {
       response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: {
           parts: [
             { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
@@ -128,20 +128,16 @@ export default async function handler(req, res) {
       });
     } catch (primaryError) {
       console.warn("Fallo modelo primario:", primaryError.message);
-      if (primaryError.message?.includes('503') || primaryError.status === 503) {
-          response = await ai.models.generateContent({
-                model: "gemini-2.0-flash",
-                contents: {
-                  parts: [
-                    { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
-                    { text: `Analiza este CV para el Comandante ${name}.` }
-                  ]
-                },
-                config: { systemInstruction, responseMimeType: "application/json", responseSchema },
-            });
-      } else {
-          throw primaryError;
-      }
+      response = await ai.models.generateContent({
+            model: "gemini-3-pro-preview",
+            contents: {
+              parts: [
+                { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
+                { text: `Analiza este CV para el Comandante ${name}.` }
+              ]
+            },
+            config: { systemInstruction, responseMimeType: "application/json", responseSchema },
+        });
     }
 
     const responseText = response?.text;
