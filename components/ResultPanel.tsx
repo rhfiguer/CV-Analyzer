@@ -52,7 +52,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setSession(session);
       if (event === 'SIGNED_IN' && session) {
-          console.log("[AUTH] Sesión iniciada. Escaneando privilegios...");
+          console.log("[AUTH] Sesión detectada. Iniciando diagnóstico de privilegios...");
           setIsLoginModalOpen(false);
           await checkPremiumStatus(session);
       }
@@ -63,58 +63,57 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
   const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
-    const email = currentSession.user.email;
+    const email = currentSession.user.email.toLowerCase().trim();
 
-    console.log(`[RADAR] Iniciando escaneo de banda ancha para: ${email}`);
+    console.log(`[SELF-HEALING] Analizando privilegios para: ${email}`);
 
     try {
-        // 1. Consultar Perfil (Tabla Profiles de tu esquema)
+        // 1. Consultar Perfil de Usuario
         const { data: profile, error: profileErr } = await supabase
             .from('profiles')
-            .select('is_premium, status, subscription_id')
+            .select('is_premium, id')
             .eq('id', currentSession.user.id)
             .single();
         
         if (profile?.is_premium) {
-            console.log("✅ [RADAR] Acceso Premium ACTIVO en 'profiles'. Status:", profile.status);
+            console.log("✅ [AUTH] Privilegios confirmados en tabla 'profiles'.");
             setIsPremiumUnlocked(true);
             return true;
         }
 
-        // 2. Fallback: Buscar en Leads (Donde el Webhook guarda el backup por email)
-        console.log(`[RADAR] Perfil estándar. Buscando registros de pago en base de leads...`);
-        const { data: lead, error: leadErr } = await supabase
-            .from('cosmic_cv_leads')
-            .select('is_premium, last_payment_status, ls_subscription_id')
-            .ilike('email', email)
-            .maybeSingle();
+        // 2. Lógica de Self-Healing: Consultar el Ledger (premium_purchases)
+        console.log(`[SELF-HEALING] Perfil estándar. Consultando Libro Mayor (Ledger) para ${email}...`);
+        
+        const { data: purchases, error: ledgerErr } = await supabase
+            .from('premium_purchases')
+            .select('email, lemon_order_id')
+            .ilike('email', email);
 
-        if (lead?.is_premium) {
-            console.log("🚀 [RADAR HIT] ¡Pago detectado en leads! Sincronizando perfil de usuario...");
+        if (purchases && purchases.length > 0) {
+            console.log(`🚀 [SELF-HEALING HIT] Pago encontrado en Ledger (ID: ${purchases[0].lemon_order_id}). Sincronizando perfil...`);
             
-            // Sincronizar 'profiles' con la estructura correcta
-            const { error: updateErr } = await supabase
+            // Reparar el perfil del usuario inmediatamente
+            const { error: syncError } = await supabase
                 .from('profiles')
                 .update({ 
                     is_premium: true, 
-                    status: lead.last_payment_status || 'paid', 
-                    subscription_id: lead.ls_subscription_id 
+                    status: 'active',
+                    subscription_id: purchases[0].lemon_order_id
                 })
                 .eq('id', currentSession.user.id);
             
-            if (updateErr) {
-                console.error("❌ [RADAR ERROR] Fallo al actualizar perfil:", updateErr.message);
+            if (syncError) {
+                console.error("❌ [SELF-HEALING ERROR] Fallo al sincronizar perfil:", syncError.message);
             } else {
-                console.log("✅ [RADAR] Perfil actualizado con éxito.");
+                console.log("✅ [SELF-HEALING SUCCESS] Perfil sincronizado y blindado.");
+                setIsPremiumUnlocked(true);
+                return true;
             }
-            
-            setIsPremiumUnlocked(true);
-            return true;
         }
 
-        console.log("[RADAR] No se detectaron transacciones premium para esta cuenta.");
+        console.log("[AUTH] No se encontraron registros de compra para esta cuenta.");
     } catch (e) {
-        console.error("❌ [RADAR CRITICAL] Error durante el escaneo:", e);
+        console.error("❌ [AUTH CRITICAL] Fallo en la secuencia de verificación:", e);
     }
     return false;
   };
@@ -126,11 +125,12 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       }
       setVerifyingPayment(true);
       const isPremium = await checkPremiumStatus(session);
-      await new Promise(r => setTimeout(r, 1500));
+      // Simular latencia de radar para UX
+      await new Promise(r => setTimeout(r, 1200));
       setVerifyingPayment(false);
       
       if (!isPremium) {
-          alert(`🛰️ Radar: No detectamos el pago para ${session.user.email}.\n\nSi acabas de comprar, espera 30 segundos a que la señal llegue desde Lemon Squeezy e intenta de nuevo.`);
+          alert(`🛰️ Radar de Pago: No detectamos transacciones para ${session.user.email}.\n\nSi acabas de realizar el pago, espera 15-30 segundos para que el satélite procese la señal de Lemon Squeezy e intenta de nuevo.`);
       }
   };
 
