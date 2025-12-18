@@ -44,46 +44,24 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   useEffect(() => {
     if (!supabase) return;
 
-    const syncSessionAndRun = async () => {
-      console.log("🛰️ [AUTH_SYNC] Iniciando sincronización de terminal...");
-      
-      let { data: { session: currentSession } } = await supabase.auth.getSession();
-      let detectedEmail = currentSession?.user?.email;
-
-      if (!detectedEmail) {
-          console.log("⏳ [AUTH_SYNC] Sesión no detectada. Esperando hidratación de LocalStorage...");
-          await new Promise(r => setTimeout(r, 800)); 
-          
-          const retry = await supabase.auth.getSession();
-          currentSession = retry.data.session;
-          detectedEmail = currentSession?.user?.email;
-      }
-
-      console.log("✅ [AUTH_SYNC] USUARIO FINAL DETECTADO:", detectedEmail || "ANÓNIMO");
+    const initialize = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
       setSession(currentSession);
-
-      saveLead(userName, detectedEmail || userEmail, true, missionId as any).catch(() => {});
-
+      
       if (currentSession) {
           await checkEntitlement(currentSession);
       }
     };
 
-    syncSessionAndRun();
+    initialize();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, newSession: any) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          console.log(`[AUTH_EVENT] Evento detectado: ${event}. Actualizando estado...`);
-          setSession(newSession);
-          if (newSession) {
-              setIsLoginModalOpen(false);
-              await checkEntitlement(newSession);
-          }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      setSession(newSession);
+      if (newSession) {
+          setIsLoginModalOpen(false);
+          await checkEntitlement(newSession);
       }
-      if (event === 'SIGNED_OUT') {
-          setSession(null);
-          setIsPremiumUnlocked(false);
-      }
+      if (event === 'SIGNED_OUT') setIsPremiumUnlocked(false);
     });
 
     return () => subscription.unsubscribe();
@@ -92,89 +70,39 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const checkEntitlement = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
     
-    const email = currentSession.user.email.toLowerCase().trim();
-    console.log(`[ENTITLEMENT] Escaneando privilegios para: ${email}`);
+    console.log(`[IDENTITY-CHECK] Validando suscripción para UID: ${currentSession.user.id}`);
 
     try {
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('is_premium, id')
-            .eq('id', currentSession.user.id)
-            .single();
+        // Consultamos la tabla maestra de suscripciones por ID de Usuario
+        const { data: subscription, error } = await supabase
+            .from('subscriptions')
+            .select('status')
+            .eq('user_id', currentSession.user.id)
+            .in('status', ['active', 'on_trial'])
+            .maybeSingle();
         
-        if (profile?.is_premium) {
-            console.log("✅ [ENTITLEMENT] Usuario ya es Premium en perfiles.");
+        if (subscription) {
+            console.log("✅ [ENTITLEMENT] Suscripción activa detectada.");
             setIsPremiumUnlocked(true);
             return true;
         }
 
-        console.log(`[ENTITLEMENT] Perfil estándar. Buscando en Libro Mayor...`);
-        
-        const { data: purchases } = await supabase
-            .from('premium_purchases')
-            .select('email, lemon_order_id')
-            .ilike('email', email);
+        // Fallback: Verificar si existe un registro histórico en perfiles (Compatibilidad)
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('is_premium')
+            .eq('id', currentSession.user.id)
+            .single();
 
-        if (purchases && purchases.length > 0) {
-            console.log(`🚀 [SELF-HEALING] ¡Pago encontrado en Ledger!`);
-            const { error: syncError } = await supabase
-                .from('profiles')
-                .update({ 
-                    is_premium: true, 
-                    status: 'active',
-                    subscription_id: purchases[0].lemon_order_id
-                })
-                .eq('id', currentSession.user.id);
-            
-            if (!syncError) {
-                console.log("✅ [SELF-HEALING] Perfil reparado exitosamente.");
-                setIsPremiumUnlocked(true);
-                return true;
-            }
+        if (profile?.is_premium) {
+            setIsPremiumUnlocked(true);
+            return true;
         }
+
     } catch (e: any) {
-        console.error("❌ [ENTITLEMENT] Error crítico durante escaneo:", e.message);
+        console.error("❌ [ENTITLEMENT] Error en validación táctica:", e.message);
     }
     return false;
-  };
-
-  /**
-   * REEMPLAZO: handleManualVerification con refreshSession forzado
-   */
-  const handleManualVerification = async () => {
-    setVerifyingPayment(true);
-    try {
-      console.log("📡 [VERIFY] Forzando actualización de sesión...");
-      
-      // EL SECRETO: Forzar actualización de sesión contra el servidor
-      // Esto arregla el error "You haven't signed in yet" hidratando el cliente
-      const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession();
-
-      if (error || !refreshedSession) {
-        console.error("❌ No se pudo recuperar la sesión:", error);
-        alert("⚠️ Radar de Identidad: No detectamos tu sesión activa. Por favor, asegúrate de haber abierto el enlace de acceso enviado a tu correo.");
-        setVerifyingPayment(false);
-        return;
-      }
-
-      console.log("✅ Sesión recuperada para:", refreshedSession.user.email);
-      setSession(refreshedSession);
-
-      // Con la sesión fresca y el cliente autorizado, ejecutamos la verificación
-      const hasPremium = await checkEntitlement(refreshedSession);
-      
-      if (hasPremium) {
-        alert("✅ ¡Verificación completada! El radar detectó tu suscripción. Disfruta tu reporte, Comandante.");
-      } else {
-        alert(`🛰️ Radar de Pago: No detectamos transacciones para ${refreshedSession.user.email}.\n\nSi acabas de pagar, recuerda que Lemon Squeezy puede tardar unos segundos en sincronizar el pago. Intenta de nuevo en un momento.`);
-      }
-
-    } catch (err: any) {
-      console.error("Error manual verify:", err);
-      alert("💥 Error técnico al verificar. Por favor, contacta con soporte si el problema persiste.");
-    } finally {
-      setVerifyingPayment(false);
-    }
   };
 
   const handleUnlockClick = () => {
@@ -182,13 +110,39 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         setIsLoginModalOpen(true);
         return;
     }
-    proceedToCheckout(session.user.email);
+    proceedToCheckout();
   };
 
-  const proceedToCheckout = (email?: string) => {
-      const targetEmail = (email || session?.user?.email || userEmail).toLowerCase().trim();
-      const checkoutUrl = `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[email]=${encodeURIComponent(targetEmail)}`;
-      window.location.href = checkoutUrl;
+  const proceedToCheckout = () => {
+      if (!session?.user) return;
+      
+      // IDENTITY-FIRST: Pasamos el user_id para que el webhook lo vincule sin errores
+      const checkoutUrl = new URL(LEMON_SQUEEZY_CHECKOUT_URL);
+      checkoutUrl.searchParams.set('checkout[email]', session.user.email);
+      checkoutUrl.searchParams.set('checkout[custom][user_id]', session.user.id);
+      checkoutUrl.searchParams.set('checkout[custom][name]', userName);
+      
+      window.location.href = checkoutUrl.toString();
+  };
+
+  const handleManualVerification = async () => {
+    setVerifyingPayment(true);
+    try {
+      const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
+      if (refreshedSession) {
+        setSession(refreshedSession);
+        const hasPremium = await checkEntitlement(refreshedSession);
+        if (hasPremium) {
+          alert("✅ ¡Misión Exitosa! El radar ha detectado tu suscripción activa.");
+        } else {
+          alert("🛰️ Radar de Pago: No detectamos una suscripción activa vinculada a esta cuenta.\n\nRecuerda que el procesamiento puede tardar hasta 30 segundos.");
+        }
+      }
+    } catch (err) {
+      alert("Error al sincronizar con la base.");
+    } finally {
+      setVerifyingPayment(false);
+    }
   };
 
   const handleSendEmail = async () => {
@@ -200,7 +154,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       const response = await sendEmailReport(doc, userEmail, userName, missionTitle);
       if (response.success) setEmailStatus('sent');
       else throw new Error(response.error);
-    } catch (error: any) {
+    } catch (error) {
       setEmailStatus('error'); 
     }
   };

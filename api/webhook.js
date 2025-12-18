@@ -18,74 +18,73 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
-    console.log("[LEDGER-WEBHOOK] 🛰️ Señal entrante de Lemon Squeezy detectada.");
+    console.log("[IDENTITY-WEBHOOK] 🛰️ Señal recibida de Lemon Squeezy.");
 
-    if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET || !supabaseUrl || !supabaseServiceRoleKey) {
-      console.error("[LEDGER-WEBHOOK CRITICAL] Variables de entorno faltantes.");
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+    if (!secret || !supabaseUrl || !supabaseServiceRoleKey) {
       return res.status(500).json({ error: 'Configuración de servidor incompleta' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
     const rawBody = await getRawBody(req);
-    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
     
-    // 1. Verificación de Integridad (Firma)
+    // 1. Verificación de Firma
     const hmac = crypto.createHmac('sha256', secret);
     const digest = Buffer.from(hmac.update(rawBody).digest('hex'), 'utf8');
     const signature = Buffer.from(req.headers['x-signature'] || '', 'utf8');
 
     if (!crypto.timingSafeEqual(digest, signature)) {
-      console.error("[LEDGER-WEBHOOK ERROR] Firma inválida. Intento de acceso no autorizado.");
+      console.error("[IDENTITY-WEBHOOK] Firma inválida.");
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
     const payload = JSON.parse(rawBody.toString());
     const eventName = payload.meta.event_name;
     const attributes = payload.data.attributes;
-    const resourceId = payload.data.id; // Lemon Order/Subscription ID
-
-    const userEmail = (attributes.user_email || "").toLowerCase().trim();
+    
+    // IDENTITY-FIRST: Recuperamos el user_id de los metadatos personalizados
+    const userId = payload.meta.custom_data?.user_id;
+    const subscriptionId = payload.data.id;
     const status = attributes.status;
 
-    console.log(`[LEDGER-WEBHOOK] Evento: ${eventName} | Email: ${userEmail} | ID: ${resourceId} | Status: ${status}`);
+    console.log(`[IDENTITY-WEBHOOK] Evento: ${eventName} | UserID: ${userId} | Status: ${status}`);
 
-    // Solo procesamos eventos que otorgan derechos premium
-    const isPremiumEvent = [
-      'order_created', 
-      'subscription_created', 
-      'subscription_updated', 
-      'subscription_payment_success'
-    ].includes(eventName);
-    
-    const hasPaidStatus = ['paid', 'active', 'on_trial'].includes(status);
-
-    if (isPremiumEvent && hasPaidStatus && userEmail) {
-      console.log(`[LEDGER-WEBHOOK] 📖 Inyectando registro en Libro Mayor para: ${userEmail}`);
-      
-      // UPSERT en la nueva tabla 'premium_purchases'
-      // Esto asegura que el pago quede registrado pase lo que pase con la cuenta de usuario.
-      const { data, error: ledgerError } = await supabase
-        .from('premium_purchases')
-        .upsert({
-          email: userEmail,
-          lemon_order_id: resourceId.toString(),
-          created_at: new Date().toISOString()
-        }, { onConflict: 'lemon_order_id' });
-
-      if (ledgerError) {
-        console.error(`[LEDGER-WEBHOOK ERROR] No se pudo guardar en premium_purchases: ${ledgerError.message}`);
-        return res.status(500).json({ error: 'Ledger insertion failed' });
-      }
-
-      console.log(`[LEDGER-WEBHOOK SUCCESS] Pago blindado en DB. Usuario ${userEmail} tiene derecho premium.`);
-      return res.status(200).json({ success: true, message: 'Entitlement secured in ledger' });
+    if (!userId) {
+      console.warn("[IDENTITY-WEBHOOK] No se encontró user_id en el payload. Operación cancelada.");
+      return res.status(200).json({ message: 'No user_id found, ignoring' });
     }
 
-    console.log(`[LEDGER-WEBHOOK INFO] Evento ${eventName} con status ${status} no califica para registro premium.`);
-    return res.status(200).json({ message: 'Event ignored (no payment action)' });
+    // 2. Gestión de la tabla 'subscriptions'
+    if (['subscription_created', 'subscription_updated', 'subscription_payment_success', 'order_created'].includes(eventName)) {
+      
+      const { error } = await supabase
+        .from('subscriptions')
+        .upsert({
+          user_id: userId,
+          lemon_subscription_id: subscriptionId.toString(),
+          status: status, // active, past_due, etc.
+          current_period_end: attributes.renews_at || attributes.ends_at,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'lemon_subscription_id' });
+
+      if (error) {
+        console.error("[IDENTITY-WEBHOOK ERROR]", error.message);
+        return res.status(500).json({ error: 'DB Update failed' });
+      }
+
+      // Sincronizar también con perfiles para compatibilidad legacy
+      await supabase
+        .from('profiles')
+        .update({ is_premium: ['active', 'on_trial'].includes(status) })
+        .eq('id', userId);
+
+      console.log(`[IDENTITY-WEBHOOK SUCCESS] Privilegios actualizados para usuario ${userId}`);
+    }
+
+    return res.status(200).json({ success: true });
 
   } catch (error) {
-    console.error("[LEDGER-WEBHOOK CRITICAL FAILURE]:", error);
+    console.error("[IDENTITY-WEBHOOK CRITICAL FAILURE]:", error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
