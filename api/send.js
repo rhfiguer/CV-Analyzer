@@ -31,7 +31,7 @@ export default async function handler(req, res) {
        return res.status(500).json({ error: 'Server configuration error: Missing API Key' });
     }
 
-    // Diseño de Email Premium Dark Mode
+    // Diseño de Email Premium Dark Mode con UX Writing optimizado
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -67,15 +67,18 @@ export default async function handler(req, res) {
               </div>
 
               <!-- CTA Button -->
-              <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 40px auto;">
+              <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 40px auto 10px auto;">
                 <tr>
                   <td align="center" bgcolor="#e11d48" style="border-radius: 14px;">
                     <a href="https://cv.somosmaas.org" target="_blank" style="display: inline-block; padding: 18px 36px; font-size: 16px; font-weight: 900; color: #ffffff; text-decoration: none; text-transform: uppercase; letter-spacing: 2px;">
-                      DESCARGAR MI REPORTE TÁCTICO
+                      ACCEDER A MI CENTRO DE MANDO
                     </a>
                   </td>
                 </tr>
               </table>
+              <p style="font-size: 12px; text-align: center; color: #64748b; margin-bottom: 40px; font-weight: bold;">
+                📎 Hemos adjuntado una copia en PDF de tu reporte en este correo para tus archivos.
+              </p>
 
               <p style="font-size: 16px; line-height: 1.6; text-align: center; color: #94a3b8;">
                 Bienvenido a la tribu de <strong>Migrantes de Alta Ambición</strong>. Esto es solo el comienzo de tu ascenso.
@@ -101,7 +104,7 @@ export default async function handler(req, res) {
       </html>
     `;
 
-    console.log("[API] Transmitiendo vía Resend con nueva identidad visual...");
+    console.log("[API] Transmitiendo vía Resend con UX Writing optimizado...");
 
     const data = await resend.emails.send({
       from: 'Somos MAAS <hola@somosmaas.org>', 
