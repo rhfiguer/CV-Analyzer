@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { MissionId, FormDataState, AnalysisResult } from './types';
 import { MISSIONS } from './constants';
@@ -8,7 +9,7 @@ import { analyzeCV } from './services/geminiService';
 import { saveLead } from './services/supabase';
 import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, Globe, ExternalLink } from 'lucide-react';
 
-const MAX_FILE_SIZE_MB = 3; // Límite de seguridad para Vercel Serverless (4.5MB payload limit)
+const MAX_FILE_SIZE_MB = 3;
 const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const App: React.FC = () => {
@@ -17,8 +18,6 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  
-  // Consents - Now defaulted to TRUE
   const [privacyConsent, setPrivacyConsent] = useState<boolean>(true);
   
   const [formData, setFormData] = useState<FormDataState>({
@@ -26,12 +25,11 @@ const App: React.FC = () => {
     email: '',
     mission: null,
     file: null,
-    marketingConsent: true // Defaulted to TRUE
+    marketingConsent: true
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // GDPR: Load data from LocalStorage only if it exists
   useEffect(() => {
     const savedData = localStorage.getItem('cosmic_pilot_credentials');
     if (savedData) {
@@ -42,15 +40,11 @@ const App: React.FC = () => {
             ...prev, 
             name: parsed.name, 
             email: parsed.email,
-            // If user previously unchecked it, respect that decision. Otherwise default to true.
             marketingConsent: parsed.marketingConsent !== undefined ? parsed.marketingConsent : true
           }));
-          // We assume privacy was accepted if they have saved data, but we keep the state controllable
           setPrivacyConsent(true);
         }
-      } catch (e) {
-        console.error("Error loading credentials", e);
-      }
+      } catch (e) {}
     }
   }, []);
 
@@ -71,73 +65,36 @@ const App: React.FC = () => {
   };
 
   const validateAndSetFile = (file: File) => {
-    // 1. Check Type
     if (file.type !== 'application/pdf') {
-      setError("Solo se permiten archivos PDF para el análisis de combustible.");
+      setError("Solo se permiten archivos PDF.");
       return;
     }
-    
-    // 2. Check Size
     if (file.size > MAX_FILE_BYTES) {
-      setError(`⚠️ ALERTA DE CARGA: El archivo excede el límite de masa (${MAX_FILE_SIZE_MB}MB). Por favor comprímelo para el despegue.`);
+      setError(`El archivo excede el límite de ${MAX_FILE_SIZE_MB}MB.`);
       return;
     }
-
     setFormData(prev => ({ ...prev, file: file }));
     setError(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      validateAndSetFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) validateAndSetFile(e.target.files[0]);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-       validateAndSetFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleStartApp = () => {
-    setShowLanding(false);
-  };
+  const handleStartApp = () => setShowLanding(false);
 
   const nextStep = () => {
     if (step === 1) {
       if (!formData.email || !formData.name) {
-        setError("Identificación completa requerida para continuar.");
+        setError("Identificación requerida.");
         return;
       }
-      if (!privacyConsent) {
-        setError("Debes aceptar el protocolo de privacidad (GDPR) para proceder.");
-        return;
-      }
-      
-      // 1. Save locally for UX (LocalStorage only, NO DB yet)
       localStorage.setItem('cosmic_pilot_credentials', JSON.stringify({
         name: formData.name,
         email: formData.email,
         marketingConsent: formData.marketingConsent
       }));
-
-      // REMOVIDO: saveLead() aquí causaba duplicados.
-      // Esperamos al paso 2 para tener la misión y guardar todo junto.
-      
-      if (formData.marketingConsent) {
-        console.log(">> MARKETING SIGNAL: Subscribing commander to frequency [SECURE CHANNEL]");
-      }
-    } else if (step === 2) {
-       // 2. Save remotely to DB (Single complete record)
-       // Ahora guardamos aquí, cuando tenemos Nombre + Email + Misión
-       saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission).catch(e => console.error("DB Update Error", e));
     }
-    
     setError(null);
     setStep(prev => prev + 1);
   };
@@ -149,13 +106,17 @@ const App: React.FC = () => {
     setError(null);
 
     try {
+      // REGISTRO CRÍTICO: Guardamos el lead justo antes del análisis
+      // para asegurar que el registro existe antes de que el usuario llegue a los resultados.
+      await saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission);
+      
       const data = await analyzeCV(formData.file, formData.mission, formData.email, formData.name);
       setResult(data);
       setLoading(false);
-      setStep(4); // Result step
+      setStep(4);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Error crítico en los sistemas de navegación. Intente nuevamente.");
+      setError(err.message || "Error en el análisis.");
       setLoading(false);
     }
   };
@@ -163,312 +124,140 @@ const App: React.FC = () => {
   const resetMission = () => {
     setStep(1);
     setResult(null);
-    // Keep name, email and marketing pref for UX
     setFormData(prev => ({ ...prev, mission: null, file: null }));
-    // Reset privacy consent to force check on new analysis (good practice) or keep it true based on preference
     setPrivacyConsent(true); 
   };
 
   return (
     <div className="min-h-screen text-white font-sans selection:bg-cyan-500/30">
-      {/* Background Elements */}
-      {/* Vignette effect: Transparent center to show canvas stars, darker edges for focus */}
       <div className="fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/40 to-black/90 pointer-events-none"></div>
-      <div className="fixed inset-0 z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
       
-      {/* COMMUNITY LINK - Fixed Top Left */}
-      <div className="fixed top-4 left-4 md:top-6 md:left-6 z-50 animate-[fadeIn_1s_ease-out]">
-        <a 
-          href="https://somosmaas.org" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="group flex items-center gap-3 px-4 py-2 bg-slate-950/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-slate-900/80 hover:border-cyan-500/50 transition-all duration-300 shadow-lg hover:shadow-[0_0_20px_rgba(6,182,212,0.15)]"
-        >
-          <div className="relative flex items-center justify-center">
-             <Globe size={16} className="text-slate-400 group-hover:text-cyan-400 transition-colors" />
-             <span className="absolute inset-0 rounded-full bg-cyan-400 opacity-0 group-hover:animate-ping group-hover:opacity-20"></span>
-          </div>
-          <span className="text-xs md:text-sm font-medium text-slate-300 group-hover:text-white tracking-wide">
-            Somos MAAS
-          </span>
-          <ExternalLink size={12} className="text-slate-500 group-hover:text-cyan-400 opacity-0 group-hover:opacity-100 -ml-2 group-hover:ml-0 transition-all duration-300" />
+      <div className="fixed top-4 left-4 md:top-6 md:left-6 z-50">
+        <a href="https://somosmaas.org" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 px-4 py-2 bg-slate-950/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-slate-900/80 transition-all shadow-lg">
+          <Globe size={16} className="text-slate-400 group-hover:text-cyan-400" />
+          <span className="text-xs md:text-sm font-medium text-slate-300">Somos MAAS</span>
         </a>
       </div>
 
-      {/* Main Container - Reduced py for compact landing */}
       <main className="container mx-auto px-4 py-6 md:py-10 relative z-10 min-h-screen flex flex-col items-center justify-center">
-        
-        {/* LANDING PAGE STATE */}
         {showLanding ? (
           <LandingPage onStart={handleStartApp} />
         ) : (
-          /* APP FLOW STATE */
           <>
-            {/* Header */}
-            <header className="text-center mb-8 md:mb-12 animate-[fadeIn_1s_ease-out]">
+            <header className="text-center mb-8 md:mb-12">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800 text-cyan-400 text-xs font-bold tracking-widest uppercase mb-4">
-                <Sparkles size={12} /> Para Migrantes de Alta Ambición de Superación
+                <Sparkles size={12} /> Tecnología de Calibración
               </div>
-              <h1 className="text-3xl md:text-6xl font-extrabold bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500 mb-2 md:mb-4">
+              <h1 className="text-3xl md:text-6xl font-extrabold bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500 mb-2">
                 Analizador Cósmico de CV
               </h1>
-              <p className="text-slate-400 max-w-xl mx-auto text-sm md:text-base">
-                Diseñado para quienes no conocen fronteras. Calibra tu perfil con estándares internacionales y prepárate para un salto de carrera exponencial.
-              </p>
             </header>
 
-            {/* Content Box */}
-            <div className="w-full max-w-3xl glass-panel rounded-3xl p-1 shadow-2xl overflow-hidden relative">
-              
-              {/* Progress Bar */}
+            <div className="w-full max-w-3xl glass-panel rounded-3xl p-1 shadow-2xl relative overflow-hidden">
               {!result && (
                  <div className="h-1 bg-slate-800 w-full top-0 absolute left-0">
-                   <div 
-                     className="h-full bg-cyan-500 shadow-[0_0_10px_#06b6d4] transition-all duration-500"
-                     style={{ width: `${(step / 3) * 100}%` }}
-                   ></div>
+                   <div className="h-full bg-cyan-500 shadow-[0_0_10px_#06b6d4] transition-all duration-500" style={{ width: `${(step / 3) * 100}%` }}></div>
                  </div>
               )}
 
               <div className="p-6 md:p-10">
-                
-                {/* Step 1: Identification */}
                 {step === 1 && (
-                  <div className="space-y-6 animate-[fadeIn_0.5s_ease-out]">
+                  <div className="space-y-6">
                     <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                       <span className="text-cyan-500">01.</span> Identificación del Piloto
                     </h2>
-                    
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label htmlFor="name" className="text-xs md:text-sm text-slate-400 uppercase tracking-wide font-semibold pl-1">
-                          Nombre del Piloto
-                        </label>
-                        <input
-                          id="name"
-                          type="text"
-                          value={formData.name}
-                          onChange={handleNameChange}
-                          placeholder="Ej: Carlos, Romina"
-                          className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 md:px-5 md:py-4 text-base md:text-lg text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                          autoFocus
-                        />
+                        <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold pl-1">Nombre</label>
+                        <input type="text" value={formData.name} onChange={handleNameChange} placeholder="Tu nombre" className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none transition-all" autoFocus />
                       </div>
-                      
                       <div className="space-y-2">
-                        <label htmlFor="email" className="text-xs md:text-sm text-slate-400 uppercase tracking-wide font-semibold pl-1">
-                          ID de Comandante (Email)
-                        </label>
-                        <input
-                          id="email"
-                          type="email"
-                          value={formData.email}
-                          onChange={handleEmailChange}
-                          placeholder="comandante@flota-estelar.com"
-                          className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 md:px-5 md:py-4 text-base md:text-lg text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                        />
+                        <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold pl-1">Email</label>
+                        <input type="email" value={formData.email} onChange={handleEmailChange} placeholder="tu@email.com" className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none transition-all" />
                       </div>
-
-                      {/* Compact Consents Section */}
-                      <div className="space-y-2 pt-2 px-1">
-                        
-                        {/* GDPR Consent (Required) */}
-                        <label className="flex items-start gap-3 cursor-pointer group opacity-90 hover:opacity-100 transition-opacity">
-                          <div className="relative flex items-center mt-0.5">
-                            <input
-                              type="checkbox"
-                              checked={privacyConsent}
-                              onChange={(e) => setPrivacyConsent(e.target.checked)}
-                              className="peer appearance-none w-4 h-4 border border-slate-600 rounded bg-slate-900 checked:bg-cyan-600 checked:border-cyan-600 transition-all"
-                            />
-                             <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100 top-0.5 left-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                             </svg>
-                          </div>
-                          <div className="text-xs text-slate-500 leading-relaxed select-none group-hover:text-slate-400">
-                            <span className="font-semibold text-slate-400 group-hover:text-slate-300">Protocolo de Privacidad.</span> Acepto el procesamiento local de mis datos.
-                          </div>
+                      <div className="space-y-2 pt-2">
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <input type="checkbox" checked={privacyConsent} onChange={(e) => setPrivacyConsent(e.target.checked)} className="mt-1" />
+                          <span className="text-xs text-slate-400">Acepto el procesamiento de mis datos.</span>
                         </label>
-
-                        {/* Marketing Consent (Optional) */}
-                        <label className="flex items-start gap-3 cursor-pointer group opacity-80 hover:opacity-100 transition-opacity">
-                          <div className="relative flex items-center mt-0.5">
-                            <input
-                              type="checkbox"
-                              checked={formData.marketingConsent}
-                              onChange={handleMarketingChange}
-                              className="peer appearance-none w-4 h-4 border border-slate-600 rounded bg-slate-900 checked:bg-purple-600 checked:border-purple-600 transition-all"
-                            />
-                             <svg className="absolute w-3 h-3 text-white pointer-events-none opacity-0 peer-checked:opacity-100 top-0.5 left-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                             </svg>
-                          </div>
-                          <div className="text-xs text-slate-600 leading-relaxed select-none group-hover:text-slate-400">
-                            <span className="font-semibold text-slate-500 group-hover:text-slate-300">Comunicaciones.</span> Recibir novedades sobre oportunidades de carrera.
-                          </div>
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <input type="checkbox" checked={formData.marketingConsent} onChange={handleMarketingChange} className="mt-1" />
+                          <span className="text-xs text-slate-400">Deseo recibir actualizaciones de carrera.</span>
                         </label>
                       </div>
-
                     </div>
-
                     <div className="flex justify-end pt-4">
-                      <button
-                        onClick={nextStep}
-                        disabled={!privacyConsent || !formData.name || !formData.email}
-                        className={`
-                          group flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all
-                          ${(privacyConsent && formData.name && formData.email)
-                            ? 'bg-white text-slate-950 hover:bg-cyan-50'
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
-                        `}
-                      >
-                        Confirmar ID <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                      </button>
+                      <button onClick={nextStep} disabled={!privacyConsent || !formData.name || !formData.email} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50">Confirmar ID <ChevronRight size={18} className="inline ml-1"/></button>
                     </div>
                   </div>
                 )}
 
-                {/* Step 2: Mission Selection */}
                 {step === 2 && (
-                  <div className="space-y-4 animate-[fadeIn_0.5s_ease-out]">
-                     <div className="mb-2">
-                        <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
-                          <span className="text-cyan-500">02.</span> Selección de Trayectoria
-                        </h2>
-                        <p className="text-slate-400 text-xs md:text-sm mt-1">Elige el cuadrante del universo donde quieres operar.</p>
-                     </div>
-
-                    {/* Grid changed to 2 cols on small screens to fit content */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                  <div className="space-y-4">
+                    <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                      <span className="text-cyan-500">02.</span> Selección de Trayectoria
+                    </h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {MISSIONS.map((m) => (
-                        <MissionCard
-                          key={m.id}
-                          mission={m}
-                          selected={formData.mission === m.id}
-                          onClick={() => handleMissionSelect(m.id)}
-                        />
+                        <MissionCard key={m.id} mission={m} selected={formData.mission === m.id} onClick={() => handleMissionSelect(m.id)} />
                       ))}
                     </div>
-
                     <div className="flex justify-between pt-6">
-                       <button onClick={() => setStep(1)} className="text-slate-500 hover:text-white transition-colors text-sm font-medium">
-                        Atrás
-                      </button>
-                      <button
-                        onClick={nextStep}
-                        disabled={!formData.mission}
-                        className={`
-                          flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all
-                          ${formData.mission 
-                            ? 'bg-white text-slate-950 hover:bg-cyan-50 shadow-[0_0_15px_rgba(255,255,255,0.3)]' 
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
-                        `}
-                      >
-                        Confirmar Rumbo <ChevronRight size={18} />
-                      </button>
+                      <button onClick={() => setStep(1)} className="text-slate-500 hover:text-white transition-colors">Atrás</button>
+                      <button onClick={nextStep} disabled={!formData.mission} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50">Confirmar Rumbo <ChevronRight size={18} className="inline ml-1"/></button>
                     </div>
                   </div>
                 )}
 
-                {/* Step 3: Upload */}
                 {step === 3 && !loading && !result && (
-                  <div className="space-y-6 animate-[fadeIn_0.5s_ease-out]">
-                     <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                  <div className="space-y-6">
+                    <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                       <span className="text-cyan-500">03.</span> Carga de Combustible (CV)
                     </h2>
-                    
-                    <div 
-                      onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`
-                        border-2 border-dashed rounded-2xl p-8 md:p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300
-                        ${formData.file 
-                          ? 'border-green-500/50 bg-green-500/5' 
-                          : 'border-slate-700 hover:border-cyan-500/50 hover:bg-slate-800/50'}
-                      `}
-                    >
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleFileChange} 
-                        className="hidden" 
-                        accept="application/pdf"
-                      />
-                      
+                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition-all ${formData.file ? 'border-green-500/50 bg-green-500/5' : 'border-slate-700 hover:border-cyan-500/50'}`}>
+                      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="application/pdf" />
                       {formData.file ? (
-                        <div className="animate-pulse">
+                        <div className="text-center">
                           <FileText size={48} className="text-green-400 mb-4 mx-auto" />
                           <p className="text-lg font-medium text-green-300">{formData.file.name}</p>
-                          <p className="text-sm text-green-500/70 mt-1">
-                             {(formData.file.size / (1024 * 1024)).toFixed(2)} MB - Listo para análisis
-                          </p>
                         </div>
                       ) : (
-                        <>
-                          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                            <UploadCloud size={32} className="text-cyan-400" />
-                          </div>
+                        <div className="text-center">
+                          <UploadCloud size={48} className="text-cyan-400 mb-4 mx-auto" />
                           <p className="text-lg font-medium text-slate-200">Arrastra tu CV (PDF)</p>
-                          <p className="text-sm text-slate-500 mt-2">o haz click para abrir la compuerta (Máx {MAX_FILE_SIZE_MB}MB)</p>
-                        </>
+                        </div>
                       )}
                     </div>
-
                     <div className="flex justify-between pt-6">
-                       <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors text-sm font-medium">
-                        Atrás
-                      </button>
-                      <button
-                        onClick={startAnalysis}
-                        disabled={!formData.file}
-                        className={`
-                          w-full md:w-auto flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg
-                          ${formData.file 
-                            ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white hover:from-cyan-500 hover:to-blue-500 shadow-cyan-900/50' 
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
-                        `}
-                      >
-                         INICIAR DESPEGUE 🚀
-                      </button>
+                      <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors">Atrás</button>
+                      <button onClick={startAnalysis} disabled={!formData.file} className="px-8 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-50">INICIAR DESPEGUE 🚀</button>
                     </div>
                   </div>
                 )}
 
-                {/* Loading State */}
                 {loading && (
-                  <div className="py-20 flex flex-col items-center justify-center text-center animate-[fadeIn_0.5s_ease-out]">
-                    <div className="relative w-24 h-24 mb-8">
+                  <div className="py-20 flex flex-col items-center justify-center text-center">
+                    <div className="relative w-20 h-20 mb-8">
                       <div className="absolute inset-0 border-4 border-slate-800 rounded-full"></div>
                       <div className="absolute inset-0 border-4 border-cyan-500 rounded-full border-t-transparent animate-spin"></div>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <Rocket size={32} className="text-cyan-400 animate-pulse" />
+                        <Rocket size={32} className="text-cyan-400" />
                       </div>
                     </div>
-                    <h3 className="text-2xl font-bold text-white mb-2 animate-pulse">Analizando Atmósfera...</h3>
-                    <p className="text-slate-400">Calculando probabilidades de éxito en la misión {MISSIONS.find(m => m.id === formData.mission)?.title}</p>
+                    <h3 className="text-2xl font-bold text-white mb-2">Analizando Atmósfera...</h3>
                   </div>
                 )}
 
-                {/* Step 4: Results */}
                 {step === 4 && result && (
-                   <ResultPanel 
-                    result={result} 
-                    onReset={resetMission}
-                    userName={formData.name}
-                    userEmail={formData.email}
-                    missionId={formData.mission}
-                   />
+                   <ResultPanel result={result} onReset={resetMission} userName={formData.name} userEmail={formData.email} missionId={formData.mission!} />
                 )}
 
-                {/* Error Message */}
                 {error && (
-                  <div className="mt-6 bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl flex items-center gap-3 animate-bounce">
+                  <div className="mt-6 bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl flex items-center gap-3">
                     <AlertCircle size={20} className="flex-shrink-0" />
-                    <p className="text-sm md:text-base">{error}</p>
+                    <p className="text-sm">{error}</p>
                   </div>
                 )}
-
               </div>
             </div>
           </>
