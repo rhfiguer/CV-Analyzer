@@ -5,7 +5,7 @@ import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, CheckCircle, Lock, 
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
-import { supabase } from '../services/supabase';
+import { supabase, saveLead } from '../services/supabase';
 import { LoginModal } from './LoginModal';
 
 const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
@@ -44,9 +44,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   useEffect(() => {
     if (!supabase) return;
 
-    // Obtener sesión inicial
+    // Obtener sesión inicial e intentar guardar el lead de forma asíncrona (Fail-Safe)
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
+      
+      // Intentamos guardar el lead pero NO esperamos a que termine para chequear el premium
+      saveLead(userName, userEmail, true, missionId as any).catch(() => {});
+      
       if (session) checkEntitlement(session);
     });
 
@@ -55,7 +59,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       setSession(session);
       if (event === 'SIGNED_IN' && session) {
           setIsLoginModalOpen(false);
-          console.log("[ENTITLEMENT] Usuario identificado. Ejecutando verificación...");
+          console.log("[ENTITLEMENT] Usuario identificado. Iniciando flujo de acceso...");
           await checkEntitlement(session);
       }
     });
@@ -69,8 +73,18 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
    */
   const checkEntitlement = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
-    const email = currentSession.user.email.toLowerCase().trim();
+    
+    // 🕵️‍♂️ INSTRUMENTACIÓN DE AUDITORÍA SOLICITADA
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log("🕵️‍♂️ DEBUG USER ID:", user?.id);
+      console.log("🕵️‍♂️ DEBUG USER EMAIL:", user?.email);
+      console.log("🕵️‍♂️ DEBUG ROLE:", user?.role);
+    } catch (e) {
+      console.warn("🕵️‍♂️ DEBUG AUDIT FAILED:", e);
+    }
 
+    const email = currentSession.user.email.toLowerCase().trim();
     console.log(`[ENTITLEMENT] Verificando acceso para: ${email}`);
 
     try {
@@ -88,15 +102,15 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         }
 
         // 2. Check Ledger (La verdad absoluta: premium_purchases)
-        console.log(`[ENTITLEMENT] Perfil estándar. Consultando Libro Mayor (premium_purchases) para ${email}...`);
+        console.log(`[ENTITLEMENT] Perfil estándar. Consultando Libro Mayor para ${email}...`);
         
         const { data: purchases, error: ledgerErr } = await supabase
             .from('premium_purchases')
             .select('email, lemon_order_id')
-            .ilike('email', email); // Case-insensitive check
+            .ilike('email', email);
 
         if (purchases && purchases.length > 0) {
-            console.log(`🚀 [SELF-HEALING] ¡Pago detectado en Ledger (ID: ${purchases[0].lemon_order_id})! Sincronizando perfil...`);
+            console.log(`🚀 [SELF-HEALING] ¡Pago detectado en Ledger! Sincronizando perfil...`);
             
             // Reparación automática del perfil
             const { error: syncError } = await supabase
@@ -117,9 +131,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             }
         }
 
-        console.log("[ENTITLEMENT] No se encontraron registros de pago asociados a este email.");
-    } catch (e) {
-        console.error("❌ [ENTITLEMENT CRITICAL] Error en la secuencia de verificación:", e);
+        console.log("[ENTITLEMENT] No se encontraron registros de pago asociados.");
+    } catch (e: any) {
+        console.error("❌ [ENTITLEMENT CRITICAL] Error en la secuencia de verificación:", e.message);
     }
     return false;
   };
@@ -132,7 +146,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       setVerifyingPayment(true);
       const hasPremium = await checkEntitlement(session);
       
-      // Latencia artificial para dar sensación de "escaneo de satélite"
       await new Promise(r => setTimeout(r, 1500));
       setVerifyingPayment(false);
       
@@ -176,7 +189,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} onSuccess={() => {}} prefilledEmail={userEmail} />
 
-      {/* Rango y Probabilidad */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700 p-6 rounded-2xl flex items-center justify-between shadow-xl">
           <div>
@@ -196,7 +208,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Análisis Misión */}
       <div className="glass-panel p-7 rounded-2xl border-l-4 border-cyan-500 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-5">
             <Navigation size={120} />
@@ -207,7 +218,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <p className="text-slate-300 leading-relaxed relative z-10">{result.analisis_mision}</p>
       </div>
 
-      {/* Fortalezas y Debilidades */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-slate-900/40 rounded-2xl p-6 border border-green-500/20 shadow-lg">
           <h4 className="text-green-400 font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-widest">
@@ -245,7 +255,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* Plan de Vuelo */}
       <div className="bg-slate-950/80 rounded-3xl p-8 border border-slate-700/50 relative overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
         <h3 className="text-base font-black text-white mb-10 uppercase tracking-[0.3em] text-center border-b border-slate-800 pb-4">Plan de Vuelo Táctico</h3>
         <div className={`grid gap-6 ${gridColsClass}`}>
@@ -284,7 +293,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         )}
       </div>
 
-      {/* Acciones Finales */}
       <div className="flex flex-col sm:flex-row justify-center items-center gap-6 pt-4">
         <button onClick={onReset} className="text-slate-500 hover:text-slate-300 font-bold transition-all text-xs uppercase tracking-widest">
            Nueva Misión
