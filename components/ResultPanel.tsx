@@ -44,23 +44,51 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   useEffect(() => {
     if (!supabase) return;
 
-    // Obtener sesión inicial e intentar guardar el lead de forma asíncrona (Fail-Safe)
-    supabase.auth.getSession().then(({ data: { session } }: any) => {
-      setSession(session);
+    const syncSessionAndRun = async () => {
+      console.log("🛰️ [AUTH_SYNC] Iniciando sincronización de terminal...");
       
-      // Intentamos guardar el lead pero NO esperamos a que termine para chequear el premium
-      saveLead(userName, userEmail, true, missionId as any).catch(() => {});
-      
-      if (session) checkEntitlement(session);
-    });
+      // 1. Primer intento rápido
+      let { data: { session: currentSession } } = await supabase.auth.getSession();
+      let detectedEmail = currentSession?.user?.email;
 
-    // Suscripción a cambios de auth
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
-      setSession(session);
-      if (event === 'SIGNED_IN' && session) {
-          setIsLoginModalOpen(false);
-          console.log("[ENTITLEMENT] Usuario identificado. Iniciando flujo de acceso...");
-          await checkEntitlement(session);
+      // 2. Patrón de Reintento para Hidratación de LocalStorage
+      if (!detectedEmail) {
+          console.log("⏳ [AUTH_SYNC] Sesión no detectada. Esperando hidratación de LocalStorage...");
+          await new Promise(r => setTimeout(r, 800)); // Delay táctico de seguridad
+          
+          const retry = await supabase.auth.getSession();
+          currentSession = retry.data.session;
+          detectedEmail = currentSession?.user?.email;
+      }
+
+      console.log("✅ [AUTH_SYNC] USUARIO FINAL DETECTADO:", detectedEmail || "ANÓNIMO");
+      setSession(currentSession);
+
+      // 3. Ejecutar persistencia de Lead (Fail-Safe)
+      // Usamos el email detectado si existe, si no el que viene por props
+      saveLead(userName, detectedEmail || userEmail, true, missionId as any).catch(() => {});
+
+      // 4. Verificar derechos premium si hay sesión
+      if (currentSession) {
+          await checkEntitlement(currentSession);
+      }
+    };
+
+    syncSessionAndRun();
+
+    // Suscripción a cambios de auth para actualizaciones en tiempo real (login desde modal)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, newSession: any) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          console.log(`[AUTH_EVENT] Evento detectado: ${event}. Actualizando estado...`);
+          setSession(newSession);
+          if (newSession) {
+              setIsLoginModalOpen(false);
+              await checkEntitlement(newSession);
+          }
+      }
+      if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setIsPremiumUnlocked(false);
       }
     });
 
@@ -74,21 +102,11 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const checkEntitlement = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
     
-    // 🕵️‍♂️ INSTRUMENTACIÓN DE AUDITORÍA SOLICITADA
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      console.log("🕵️‍♂️ DEBUG USER ID:", user?.id);
-      console.log("🕵️‍♂️ DEBUG USER EMAIL:", user?.email);
-      console.log("🕵️‍♂️ DEBUG ROLE:", user?.role);
-    } catch (e) {
-      console.warn("🕵️‍♂️ DEBUG AUDIT FAILED:", e);
-    }
-
     const email = currentSession.user.email.toLowerCase().trim();
-    console.log(`[ENTITLEMENT] Verificando acceso para: ${email}`);
+    console.log(`[ENTITLEMENT] Escaneando privilegios para: ${email}`);
 
     try {
-        // 1. Check Perfil (Caché/Estado Local en DB)
+        // 1. Check Perfil (Rápido)
         const { data: profile, error: profileErr } = await supabase
             .from('profiles')
             .select('is_premium, id')
@@ -96,13 +114,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             .single();
         
         if (profile?.is_premium) {
-            console.log("✅ [ENTITLEMENT] Usuario ya es Premium en tabla profiles.");
+            console.log("✅ [ENTITLEMENT] Usuario ya es Premium en perfiles.");
             setIsPremiumUnlocked(true);
             return true;
         }
 
-        // 2. Check Ledger (La verdad absoluta: premium_purchases)
-        console.log(`[ENTITLEMENT] Perfil estándar. Consultando Libro Mayor para ${email}...`);
+        // 2. Check Ledger (Verdad Absoluta)
+        console.log(`[ENTITLEMENT] Perfil estándar. Buscando en Libro Mayor (premium_purchases)...`);
         
         const { data: purchases, error: ledgerErr } = await supabase
             .from('premium_purchases')
@@ -110,9 +128,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             .ilike('email', email);
 
         if (purchases && purchases.length > 0) {
-            console.log(`🚀 [SELF-HEALING] ¡Pago detectado en Ledger! Sincronizando perfil...`);
+            console.log(`🚀 [SELF-HEALING] ¡Pago encontrado en Ledger (Order ID: ${purchases[0].lemon_order_id})!`);
             
-            // Reparación automática del perfil
+            // Sincronización forzada del perfil
             const { error: syncError } = await supabase
                 .from('profiles')
                 .update({ 
@@ -122,18 +140,16 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                 })
                 .eq('id', currentSession.user.id);
             
-            if (syncError) {
-                console.error("❌ [SELF-HEALING ERROR] Error al actualizar profile:", syncError.message);
-            } else {
-                console.log("✅ [SELF-HEALING SUCCESS] Perfil sincronizado. Acceso concedido.");
+            if (!syncError) {
+                console.log("✅ [SELF-HEALING] Perfil reparado exitosamente.");
                 setIsPremiumUnlocked(true);
                 return true;
             }
         }
 
-        console.log("[ENTITLEMENT] No se encontraron registros de pago asociados.");
+        console.log("[ENTITLEMENT] No se detectaron compras Premium activas.");
     } catch (e: any) {
-        console.error("❌ [ENTITLEMENT CRITICAL] Error en la secuencia de verificación:", e.message);
+        console.error("❌ [ENTITLEMENT] Error crítico durante escaneo:", e.message);
     }
     return false;
   };
@@ -145,12 +161,11 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       }
       setVerifyingPayment(true);
       const hasPremium = await checkEntitlement(session);
-      
       await new Promise(r => setTimeout(r, 1500));
       setVerifyingPayment(false);
       
       if (!hasPremium) {
-          alert(`🛰️ Radar de Pago: No detectamos transacciones para ${session.user.email}.\n\nSi acabas de pagar, espera unos segundos a que Lemon Squeezy envíe la señal a nuestra base de datos e intenta de nuevo.`);
+          alert(`🛰️ Radar de Pago: No detectamos transacciones para ${session.user.email}.\n\nSi acabas de pagar, espera 15-30 segundos e intenta de nuevo.`);
       }
   };
 
