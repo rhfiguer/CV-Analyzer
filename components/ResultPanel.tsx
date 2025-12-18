@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, Download, CheckCircle, AlertCircle, Radio, Lock, Unlock, Loader2, ArrowRight, Fingerprint, RefreshCw } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, CheckCircle, Lock, Unlock, Loader2, RefreshCw } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
@@ -44,31 +44,37 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   useEffect(() => {
     if (!supabase) return;
 
+    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
-      if (session) checkPremiumStatus(session);
+      if (session) checkEntitlement(session);
     });
 
+    // Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
       setSession(session);
       if (event === 'SIGNED_IN' && session) {
-          console.log("[AUTH] Sesión detectada. Iniciando diagnóstico de privilegios...");
           setIsLoginModalOpen(false);
-          await checkPremiumStatus(session);
+          console.log("[ENTITLEMENT] Usuario identificado. Ejecutando verificación...");
+          await checkEntitlement(session);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const checkPremiumStatus = async (currentSession: any): Promise<boolean> => {
+  /**
+   * Lógica de Verificación (Self-Healing)
+   * Consulta el Ledger y actualiza el perfil si encuentra un pago.
+   */
+  const checkEntitlement = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
     const email = currentSession.user.email.toLowerCase().trim();
 
-    console.log(`[SELF-HEALING] Analizando privilegios para: ${email}`);
+    console.log(`[ENTITLEMENT] Verificando acceso para: ${email}`);
 
     try {
-        // 1. Consultar Perfil de Usuario
+        // 1. Check Perfil (Caché/Estado Local en DB)
         const { data: profile, error: profileErr } = await supabase
             .from('profiles')
             .select('is_premium, id')
@@ -76,23 +82,23 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             .single();
         
         if (profile?.is_premium) {
-            console.log("✅ [AUTH] Privilegios confirmados en tabla 'profiles'.");
+            console.log("✅ [ENTITLEMENT] Usuario ya es Premium en tabla profiles.");
             setIsPremiumUnlocked(true);
             return true;
         }
 
-        // 2. Lógica de Self-Healing: Consultar el Ledger (premium_purchases)
-        console.log(`[SELF-HEALING] Perfil estándar. Consultando Libro Mayor (Ledger) para ${email}...`);
+        // 2. Check Ledger (La verdad absoluta: premium_purchases)
+        console.log(`[ENTITLEMENT] Perfil estándar. Consultando Libro Mayor (premium_purchases) para ${email}...`);
         
         const { data: purchases, error: ledgerErr } = await supabase
             .from('premium_purchases')
             .select('email, lemon_order_id')
-            .ilike('email', email);
+            .ilike('email', email); // Case-insensitive check
 
         if (purchases && purchases.length > 0) {
-            console.log(`🚀 [SELF-HEALING HIT] Pago encontrado en Ledger (ID: ${purchases[0].lemon_order_id}). Sincronizando perfil...`);
+            console.log(`🚀 [SELF-HEALING] ¡Pago detectado en Ledger (ID: ${purchases[0].lemon_order_id})! Sincronizando perfil...`);
             
-            // Reparar el perfil del usuario inmediatamente
+            // Reparación automática del perfil
             const { error: syncError } = await supabase
                 .from('profiles')
                 .update({ 
@@ -103,17 +109,17 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                 .eq('id', currentSession.user.id);
             
             if (syncError) {
-                console.error("❌ [SELF-HEALING ERROR] Fallo al sincronizar perfil:", syncError.message);
+                console.error("❌ [SELF-HEALING ERROR] Error al actualizar profile:", syncError.message);
             } else {
-                console.log("✅ [SELF-HEALING SUCCESS] Perfil sincronizado y blindado.");
+                console.log("✅ [SELF-HEALING SUCCESS] Perfil sincronizado. Acceso concedido.");
                 setIsPremiumUnlocked(true);
                 return true;
             }
         }
 
-        console.log("[AUTH] No se encontraron registros de compra para esta cuenta.");
+        console.log("[ENTITLEMENT] No se encontraron registros de pago asociados a este email.");
     } catch (e) {
-        console.error("❌ [AUTH CRITICAL] Fallo en la secuencia de verificación:", e);
+        console.error("❌ [ENTITLEMENT CRITICAL] Error en la secuencia de verificación:", e);
     }
     return false;
   };
@@ -124,13 +130,14 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           return;
       }
       setVerifyingPayment(true);
-      const isPremium = await checkPremiumStatus(session);
-      // Simular latencia de radar para UX
-      await new Promise(r => setTimeout(r, 1200));
+      const hasPremium = await checkEntitlement(session);
+      
+      // Latencia artificial para dar sensación de "escaneo de satélite"
+      await new Promise(r => setTimeout(r, 1500));
       setVerifyingPayment(false);
       
-      if (!isPremium) {
-          alert(`🛰️ Radar de Pago: No detectamos transacciones para ${session.user.email}.\n\nSi acabas de realizar el pago, espera 15-30 segundos para que el satélite procese la señal de Lemon Squeezy e intenta de nuevo.`);
+      if (!hasPremium) {
+          alert(`🛰️ Radar de Pago: No detectamos transacciones para ${session.user.email}.\n\nSi acabas de pagar, espera unos segundos a que Lemon Squeezy envíe la señal a nuestra base de datos e intenta de nuevo.`);
       }
   };
 
