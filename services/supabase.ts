@@ -19,13 +19,7 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         storageKey: 'somosmaas-auth-token',
-        flowType: 'pkce',
-        cookieOptions: {
-          domain: '.somosmaas.org', // Compartir sesión entre subdominios
-          path: '/',
-          sameSite: 'lax',
-          secure: true,
-        }
+        flowType: 'pkce'
       }
     });
   } catch (e) {
