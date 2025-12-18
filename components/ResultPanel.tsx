@@ -5,7 +5,7 @@ import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, CheckCircle, Lock, 
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
-import { supabase, saveLead } from '../services/supabase';
+import { supabase } from '../services/supabase';
 import { LoginModal } from './LoginModal';
 
 const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
@@ -32,7 +32,6 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   result, 
   onReset, 
   userName = "Comandante", 
-  userEmail = "",
   missionId 
 }) => {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -47,10 +46,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     const initialize = async () => {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       setSession(currentSession);
-      
-      if (currentSession) {
-          await checkEntitlement(currentSession);
-      }
+      if (currentSession) await checkEntitlement(currentSession);
     };
 
     initialize();
@@ -70,11 +66,8 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const checkEntitlement = async (currentSession: any): Promise<boolean> => {
     if (!currentSession?.user || !supabase) return false;
     
-    console.log(`[IDENTITY-CHECK] Validando suscripción para UID: ${currentSession.user.id}`);
-
     try {
-        // Consultamos la tabla maestra de suscripciones por ID de Usuario
-        const { data: subscription, error } = await supabase
+        const { data: subscription } = await supabase
             .from('subscriptions')
             .select('status')
             .eq('user_id', currentSession.user.id)
@@ -82,12 +75,10 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             .maybeSingle();
         
         if (subscription) {
-            console.log("✅ [ENTITLEMENT] Suscripción activa detectada.");
             setIsPremiumUnlocked(true);
             return true;
         }
 
-        // Fallback: Verificar si existe un registro histórico en perfiles (Compatibilidad)
         const { data: profile } = await supabase
             .from('profiles')
             .select('is_premium')
@@ -99,9 +90,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             return true;
         }
 
-    } catch (e: any) {
-        console.error("❌ [ENTITLEMENT] Error en validación táctica:", e.message);
-    }
+    } catch (e: any) {}
     return false;
   };
 
@@ -115,13 +104,10 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
   const proceedToCheckout = () => {
       if (!session?.user) return;
-      
-      // IDENTITY-FIRST: Pasamos el user_id para que el webhook lo vincule sin errores
       const checkoutUrl = new URL(LEMON_SQUEEZY_CHECKOUT_URL);
       checkoutUrl.searchParams.set('checkout[email]', session.user.email);
       checkoutUrl.searchParams.set('checkout[custom][user_id]', session.user.id);
       checkoutUrl.searchParams.set('checkout[custom][name]', userName);
-      
       window.location.href = checkoutUrl.toString();
   };
 
@@ -135,7 +121,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         if (hasPremium) {
           alert("✅ ¡Misión Exitosa! El radar ha detectado tu suscripción activa.");
         } else {
-          alert("🛰️ Radar de Pago: No detectamos una suscripción activa vinculada a esta cuenta.\n\nRecuerda que el procesamiento puede tardar hasta 30 segundos.");
+          alert("🛰️ Radar de Pago: No detectamos una suscripción activa.\n\nRecuerda que el procesamiento puede tardar hasta 30 segundos.");
         }
       }
     } catch (err) {
@@ -146,12 +132,12 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   };
 
   const handleSendEmail = async () => {
-    if (emailStatus === 'sending') return;
+    if (!session?.user?.email || emailStatus === 'sending') return;
     setEmailStatus('sending');
     try {
-      const doc = generateMissionReport(result, userName, userEmail);
+      const doc = generateMissionReport(result, userName, session.user.email);
       const missionTitle = MISSIONS.find(m => m.id === missionId)?.title;
-      const response = await sendEmailReport(doc, userEmail, userName, missionTitle);
+      const response = await sendEmailReport(doc, session.user.email, userName, missionTitle);
       if (response.success) setEmailStatus('sent');
       else throw new Error(response.error);
     } catch (error) {
@@ -164,7 +150,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
-      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} onSuccess={() => {}} prefilledEmail={userEmail} />
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} onSuccess={() => {}} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700 p-6 rounded-2xl flex items-center justify-between shadow-xl">
@@ -257,7 +243,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
                     className="group px-10 py-5 bg-white text-slate-950 hover:bg-cyan-50 text-base font-black rounded-2xl shadow-[0_0_40px_rgba(255,255,255,0.2)] flex items-center gap-3 transition-all hover:scale-105 active:scale-95"
                 >
                     <Unlock size={22} className="group-hover:rotate-12 transition-transform"/>
-                    DESBLOQUEAR ACCESO PREMIUM
+                    {session ? 'OBTENER REPORTE PREMIUM' : 'INICIAR SESIÓN CON GOOGLE'}
                 </button>
                 <div className="mt-6 flex flex-col items-center gap-2">
                     <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">¿Ya completaste la transferencia?</p>
@@ -274,14 +260,14 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <button onClick={onReset} className="text-slate-500 hover:text-slate-300 font-bold transition-all text-xs uppercase tracking-widest">
            Nueva Misión
         </button>
-        {isPremiumUnlocked && (
+        {isPremiumUnlocked && session && (
             <button 
                 onClick={handleSendEmail} 
                 disabled={emailStatus === 'sending' || emailStatus === 'sent'} 
                 className="px-10 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-black rounded-full flex items-center gap-3 shadow-2xl hover:shadow-cyan-500/20 transition-all active:scale-95 disabled:opacity-50"
             >
                 {emailStatus === 'sending' ? <Loader2 className="animate-spin" size={20}/> : emailStatus === 'sent' ? <CheckCircle size={20}/> : <Mail size={20}/>}
-                {emailStatus === 'sent' ? 'REPORTE ENVIADO' : 'ENVIAR A MI TERMINAL'}
+                {emailStatus === 'sent' ? 'REPORTE ENVIADO' : `ENVIAR A ${session.user.email}`}
             </button>
         )}
       </div>

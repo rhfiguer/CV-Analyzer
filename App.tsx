@@ -5,9 +5,10 @@ import { MISSIONS } from './constants';
 import { MissionCard } from './components/MissionCard';
 import { ResultPanel } from './components/ResultPanel';
 import { LandingPage } from './components/LandingPage';
+import { Navbar } from './components/Navbar';
 import { analyzeCV } from './services/geminiService';
-import { saveLead } from './services/supabase';
-import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, Globe, ExternalLink } from 'lucide-react';
+import { supabase } from './services/supabase';
+import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 3;
 const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -19,6 +20,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [privacyConsent, setPrivacyConsent] = useState<boolean>(true);
+  const [session, setSession] = useState<any>(null);
   
   const [formData, setFormData] = useState<FormDataState>({
     name: '',
@@ -31,21 +33,31 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const savedData = localStorage.getItem('cosmic_pilot_credentials');
-    if (savedData) {
-      try {
-        const parsed = JSON.parse(savedData);
-        if (parsed.name && parsed.email) {
-          setFormData(prev => ({ 
-            ...prev, 
-            name: parsed.name, 
-            email: parsed.email,
-            marketingConsent: parsed.marketingConsent !== undefined ? parsed.marketingConsent : true
-          }));
-          setPrivacyConsent(true);
-        }
-      } catch (e) {}
-    }
+    if (!supabase) return;
+    
+    supabase.auth.getSession().then(({ data: { session: currentSession } }: any) => {
+      setSession(currentSession);
+      if (currentSession?.user) {
+        setFormData(prev => ({
+          ...prev,
+          name: currentSession.user.user_metadata.full_name || prev.name,
+          email: currentSession.user.email || prev.email
+        }));
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, newSession: any) => {
+      setSession(newSession);
+      if (newSession?.user) {
+        setFormData(prev => ({
+          ...prev,
+          name: newSession.user.user_metadata.full_name || prev.name,
+          email: newSession.user.email || prev.email
+        }));
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,11 +101,6 @@ const App: React.FC = () => {
         setError("Identificación requerida.");
         return;
       }
-      localStorage.setItem('cosmic_pilot_credentials', JSON.stringify({
-        name: formData.name,
-        email: formData.email,
-        marketingConsent: formData.marketingConsent
-      }));
     }
     setError(null);
     setStep(prev => prev + 1);
@@ -106,10 +113,6 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      // Fallback client-side save (opcional)
-      saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission).catch(() => {});
-      
-      // La verdadera magia ahora ocurre dentro de analyzeCV -> /api/analyze (Servidor)
       const data = await analyzeCV(formData.file, formData.mission, formData.email, formData.name, formData.marketingConsent);
       setResult(data);
       setLoading(false);
@@ -129,16 +132,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen text-white font-sans selection:bg-cyan-500/30">
+    <div className="min-h-screen text-white font-sans selection:bg-cyan-500/30 pt-20">
+      <Navbar />
+      
       <div className="fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/40 to-black/90 pointer-events-none"></div>
       
-      <div className="fixed top-4 left-4 md:top-6 md:left-6 z-50">
-        <a href="https://somosmaas.org" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 px-4 py-2 bg-slate-950/40 backdrop-blur-md border border-white/10 rounded-full hover:bg-slate-900/80 transition-all shadow-lg">
-          <Globe size={16} className="text-slate-400 group-hover:text-cyan-400" />
-          <span className="text-xs md:text-sm font-medium text-slate-300">Somos MAAS</span>
-        </a>
-      </div>
-
       <main className="container mx-auto px-4 py-6 md:py-10 relative z-10 min-h-screen flex flex-col items-center justify-center">
         {showLanding ? (
           <LandingPage onStart={handleStartApp} />
@@ -187,7 +185,7 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex justify-end pt-4">
-                      <button onClick={nextStep} disabled={!privacyConsent || !formData.name || !formData.email} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50">Confirmar ID <ChevronRight size={18} className="inline ml-1"/></button>
+                      <button onClick={nextStep} disabled={!privacyConsent || !formData.name || !formData.email} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50 transition-all hover:bg-slate-100 active:scale-95">Confirmar ID <ChevronRight size={18} className="inline ml-1"/></button>
                     </div>
                   </div>
                 )}
@@ -203,8 +201,8 @@ const App: React.FC = () => {
                       ))}
                     </div>
                     <div className="flex justify-between pt-6">
-                      <button onClick={() => setStep(1)} className="text-slate-500 hover:text-white transition-colors">Atrás</button>
-                      <button onClick={nextStep} disabled={!formData.mission} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50">Confirmar Rumbo <ChevronRight size={18} className="inline ml-1"/></button>
+                      <button onClick={() => setStep(1)} className="text-slate-500 hover:text-white transition-colors text-sm font-bold uppercase tracking-widest">Atrás</button>
+                      <button onClick={nextStep} disabled={!formData.mission} className="px-6 py-3 bg-white text-slate-950 font-bold rounded-xl disabled:opacity-50 transition-all hover:bg-slate-100 active:scale-95">Confirmar Rumbo <ChevronRight size={18} className="inline ml-1"/></button>
                     </div>
                   </div>
                 )}
@@ -229,8 +227,8 @@ const App: React.FC = () => {
                       )}
                     </div>
                     <div className="flex justify-between pt-6">
-                      <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors">Atrás</button>
-                      <button onClick={startAnalysis} disabled={!formData.file} className="px-8 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-50">INICIAR DESPEGUE 🚀</button>
+                      <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors text-sm font-bold uppercase tracking-widest">Atrás</button>
+                      <button onClick={startAnalysis} disabled={!formData.file} className="px-8 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 transition-all hover:scale-105 active:scale-95">INICIAR DESPEGUE 🚀</button>
                     </div>
                   </div>
                 )}
@@ -245,6 +243,7 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <h3 className="text-2xl font-bold text-white mb-2">Analizando Atmósfera...</h3>
+                    <p className="text-slate-500 text-sm animate-pulse">Sincronizando con satélites IA</p>
                   </div>
                 )}
 

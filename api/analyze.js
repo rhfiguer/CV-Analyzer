@@ -1,13 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { createClient } from '@supabase/supabase-js';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// Inicialización de Supabase en Servidor
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey) : null;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -28,35 +22,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { fileBase64, mimeType, missionId, name, email, marketingConsent } = req.body;
+    const { fileBase64, mimeType, missionId, name, email } = req.body;
 
     console.log(`[ANALYZER] 🚀 Iniciando análisis para: ${name} (${email}) | Misión: ${missionId}`);
 
     if (!process.env.API_KEY) {
       console.error("[ERROR] Missing API_KEY");
       return res.status(500).json({ error: 'Configuration Error: Missing API Key' });
-    }
-
-    // --- REGISTRO DE LEAD CON UPSERT (LÓGICA DEFINITIVA) ---
-    if (supabase && email) {
-      try {
-        const cleanEmail = email.toLowerCase().trim();
-        console.log(`[DB] Sincronizando lead (upsert) para ${cleanEmail}...`);
-        
-        const { error: dbError } = await supabase
-          .from('cosmic_cv_leads')
-          .upsert({
-            email: cleanEmail,
-            name: name,
-            marketing_consent: marketingConsent || false,
-            mission_id: missionId
-          }, { onConflict: 'email' });
-
-        if (dbError) console.error("[DB ERROR] Fallo en upsert:", dbError.message);
-        else console.log(`[DB SUCCESS] Lead sincronizado correctamente.`);
-      } catch (dbEx) {
-        console.error("[DB CRITICAL] Error de conexión:", dbEx.message);
-      }
     }
 
     if (!fileBase64 || !missionId || !name) {
