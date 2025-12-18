@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../types';
-import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, CheckCircle, Lock, Unlock, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, CheckCircle, Lock, Unlock, Loader2, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
 import { generateMissionReport } from '../services/pdfService';
 import { sendEmailReport } from '../services/emailService';
 import { MISSIONS } from '../constants';
@@ -40,6 +40,14 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const { isPremium: isPremiumUnlocked, refresh: refreshSub } = useSubscriptionStatus();
   
+  // Protocolo de Auto-Reseteo de errores para permitir reintentos
+  useEffect(() => {
+    if (emailStatus === 'error') {
+      const timer = setTimeout(() => setEmailStatus('idle'), 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [emailStatus]);
+
   useEffect(() => {
     if (!supabase) return;
 
@@ -76,7 +84,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     setVerifyingPayment(true);
     try {
       await refreshSub();
-      await new Promise(r => setTimeout(r, 1500)); // Delay estético para radar
+      await new Promise(r => setTimeout(r, 1500)); 
       
       if (isPremiumUnlocked) {
         alert("✅ ¡Radar Sincronizado! Acceso Premium habilitado.");
@@ -91,15 +99,21 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   };
 
   const handleSendEmail = async () => {
-    if (!session?.user?.email || emailStatus === 'sending') return;
+    if (!session?.user?.email || emailStatus === 'sending' || emailStatus === 'sent') return;
+    
     setEmailStatus('sending');
     try {
       const doc = generateMissionReport(result, userName, session.user.email);
       const missionTitle = MISSIONS.find(m => m.id === missionId)?.title;
       const response = await sendEmailReport(doc, session.user.email, userName, missionTitle);
-      if (response.success) setEmailStatus('sent');
-      else throw new Error(response.error);
+      
+      if (response.success) {
+        setEmailStatus('sent');
+      } else {
+        throw new Error(response.error);
+      }
     } catch (error) {
+      console.error("Email dispatch failed:", error);
       setEmailStatus('error'); 
     }
   };
@@ -111,7 +125,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} onSuccess={() => {}} />
 
-      {/* CABECERA DE ESTADÍSTICAS (SIEMPRE VISIBLE) */}
+      {/* CABECERA DE ESTADÍSTICAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700/50 p-6 rounded-2xl flex items-center justify-between shadow-xl relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent"></div>
@@ -133,7 +147,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* ANÁLISIS TÁCTICO (SIEMPRE VISIBLE) */}
+      {/* ANÁLISIS TÁCTICO */}
       <div className="glass-panel p-8 rounded-3xl border-l-4 border-cyan-500 shadow-2xl relative overflow-hidden">
         <div className="absolute -top-10 -right-10 opacity-5">
             <Navigation size={200} />
@@ -144,7 +158,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <p className="text-slate-300 leading-relaxed text-sm relative z-10">{result.analisis_mision}</p>
       </div>
 
-      {/* GRID DE DETALLES (PARCIALMENTE BLOQUEADO) */}
+      {/* GRID DE DETALLES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-slate-900/40 rounded-3xl p-7 border border-green-500/20 shadow-lg relative overflow-hidden">
           <h4 className="text-green-400 font-black mb-5 flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
@@ -182,7 +196,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* PLAN DE VUELO - ZONA PREMIUM BLOQUEADA */}
+      {/* PLAN DE VUELO */}
       <div className="bg-slate-950/90 rounded-[2.5rem] p-10 border border-slate-700/30 relative overflow-hidden shadow-[0_0_80px_rgba(0,0,0,0.6)]">
         <h3 className="text-xs font-black text-white mb-12 uppercase tracking-[0.4em] text-center border-b border-slate-800 pb-6">Hoja de Ruta Táctica</h3>
         
@@ -223,22 +237,49 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         )}
       </div>
 
-      {/* ACCIONES FINALES */}
-      <div className="flex flex-col sm:flex-row justify-center items-center gap-8 pt-6">
-        <button onClick={onReset} className="text-slate-600 hover:text-slate-300 font-black transition-all text-[10px] uppercase tracking-[0.3em]">
-           Nueva Auditoría
-        </button>
-        
-        {isPremiumUnlocked && session && (
-            <button 
-                onClick={handleSendEmail} 
-                disabled={emailStatus === 'sending' || emailStatus === 'sent'} 
-                className="px-12 py-5 bg-gradient-to-r from-cyan-600 to-blue-700 text-white font-black rounded-full flex items-center gap-4 shadow-[0_10px_40px_rgba(6,182,212,0.3)] hover:shadow-cyan-500/50 transition-all active:scale-95 disabled:opacity-50"
-            >
-                {emailStatus === 'sending' ? <Loader2 className="animate-spin" size={20}/> : emailStatus === 'sent' ? <CheckCircle size={20}/> : <Mail size={20}/>}
-                {emailStatus === 'sent' ? 'INFORME ENVIADO' : `RECIBIR EN MI TERMINAL`}
+      {/* ACCIONES FINALES - BOTÓN REFORZADO */}
+      <div className="flex flex-col items-center gap-4 pt-6">
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-8">
+            <button onClick={onReset} className="text-slate-600 hover:text-slate-300 font-black transition-all text-[10px] uppercase tracking-[0.3em] order-2 sm:order-1">
+               Nueva Auditoría
             </button>
-        )}
+            
+            {isPremiumUnlocked && session && (
+                <div className="flex flex-col items-center gap-2 order-1 sm:order-2">
+                    <button 
+                        onClick={handleSendEmail} 
+                        disabled={emailStatus === 'sending' || emailStatus === 'sent'} 
+                        className={`
+                            px-12 py-5 font-black rounded-full flex items-center gap-4 transition-all active:scale-95 disabled:opacity-70 shadow-2xl
+                            ${emailStatus === 'error' 
+                                ? 'bg-gradient-to-r from-red-600 to-orange-700 text-white shadow-red-500/20' 
+                                : emailStatus === 'sent'
+                                ? 'bg-gradient-to-r from-green-600 to-emerald-700 text-white shadow-green-500/20'
+                                : 'bg-gradient-to-r from-cyan-600 to-blue-700 text-white shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-105'
+                            }
+                        `}
+                    >
+                        {emailStatus === 'sending' && <Loader2 className="animate-spin" size={20}/>}
+                        {emailStatus === 'sent' && <CheckCircle size={20}/>}
+                        {emailStatus === 'error' && <AlertTriangle size={20} className="animate-pulse"/>}
+                        {emailStatus === 'idle' && <Mail size={20}/>}
+                        
+                        <span className="tracking-widest">
+                            {emailStatus === 'sending' ? 'TRANSMITIENDO...' : 
+                             emailStatus === 'sent' ? 'INFORME RECIBIDO' : 
+                             emailStatus === 'error' ? 'FALLO EN UPLINK' : 
+                             `RECIBIR EN MI TERMINAL`}
+                        </span>
+                    </button>
+                    
+                    {emailStatus === 'error' && (
+                        <p className="text-[10px] text-red-500 font-black uppercase tracking-widest animate-pulse">
+                            Error de conexión. Reintentando sistema...
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
       </div>
     </div>
   );
