@@ -9,11 +9,10 @@ import { Navbar } from './components/Navbar';
 import { analyzeCV } from './services/geminiService';
 import { supabase } from './services/supabase';
 import { useSubscriptionStatus } from './hooks/useSubscription';
-import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, CheckCircle2, Unlock } from 'lucide-react';
+import { UploadCloud, FileText, ChevronRight, AlertCircle, Sparkles, Rocket, CheckCircle2 } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 3;
 const MAX_FILE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const LEMON_SQUEEZY_CHECKOUT_URL = "https://somosmaas.lemonsqueezy.com/buy/9a84d545-268d-42da-b7b8-9b77bd47cf43"; 
 
 const App: React.FC = () => {
   const [showLanding, setShowLanding] = useState<boolean>(true);
@@ -34,6 +33,24 @@ const App: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // EFECTO DE MEMORIA CÓSMICA: Recuperar último análisis
+  useEffect(() => {
+    const cached = localStorage.getItem('cosmic_last_result');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setResult(parsed);
+        // Si ya tenemos un resultado y el usuario entra siendo PRO, vamos directo al reporte
+        if (isPremium) {
+           setShowLanding(false);
+           setStep(4);
+        }
+      } catch (e) {
+        localStorage.removeItem('cosmic_last_result');
+      }
+    }
+  }, [isPremium]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -105,18 +122,6 @@ const App: React.FC = () => {
     setStep(prev => prev + 1);
   };
 
-  const handleUpgrade = () => {
-    if (!session?.user) {
-       setError("Debes iniciar sesión para desbloquear Premium.");
-       return;
-    }
-    const checkoutUrl = new URL(LEMON_SQUEEZY_CHECKOUT_URL);
-    checkoutUrl.searchParams.set('checkout[email]', session.user.email);
-    checkoutUrl.searchParams.set('checkout[custom][user_id]', session.user.id);
-    checkoutUrl.searchParams.set('checkout[custom][name]', formData.name);
-    window.location.href = checkoutUrl.toString();
-  };
-
   const startAnalysis = async () => {
     if (!formData.file || !formData.mission || !formData.email || !formData.name) return;
 
@@ -125,6 +130,10 @@ const App: React.FC = () => {
 
     try {
       const data = await analyzeCV(formData.file, formData.mission, formData.email, formData.name, formData.marketingConsent);
+      
+      // PERSISTENCIA TÁCTICA: Guardar en cache para post-pago
+      localStorage.setItem('cosmic_last_result', JSON.stringify(data));
+      
       setResult(data);
       setLoading(false);
       setStep(4);
@@ -136,6 +145,7 @@ const App: React.FC = () => {
   };
 
   const resetMission = () => {
+    localStorage.removeItem('cosmic_last_result');
     setStep(1);
     setResult(null);
     setFormData(prev => ({ ...prev, mission: null, file: null }));
@@ -258,30 +268,14 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex justify-between pt-6">
                       <button onClick={() => setStep(2)} className="text-slate-500 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest">Atrás</button>
-                      
-                      {/* TOKEN SAVER LOGIC */}
-                      {!isPremium && session ? (
-                         <button 
-                           onClick={handleUpgrade}
-                           className="px-10 py-5 bg-gradient-to-r from-yellow-600 to-orange-600 text-white font-black rounded-2xl shadow-[0_0_30px_rgba(234,179,8,0.3)] transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
-                         >
-                           <Unlock size={20} /> DESBLOQUEAR PREMIUM
-                         </button>
-                      ) : (
-                        <button 
-                          onClick={startAnalysis} 
-                          disabled={!formData.file || (session && !isPremium)} 
-                          className="px-10 py-5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-black rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.3)] disabled:opacity-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
-                        >
-                          <Rocket size={20} /> INICIAR ANÁLISIS 🚀
-                        </button>
-                      )}
+                      <button 
+                        onClick={startAnalysis} 
+                        disabled={!formData.file} 
+                        className="px-10 py-5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-black rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.3)] disabled:opacity-50 transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
+                      >
+                        <Rocket size={20} /> INICIAR ANÁLISIS 🚀
+                      </button>
                     </div>
-                    {!isPremium && session && (
-                      <p className="text-center text-[10px] text-yellow-500 font-bold uppercase tracking-widest">
-                        El análisis requiere un rango de Piloto PREMIUM activo.
-                      </p>
-                    )}
                   </div>
                 )}
 

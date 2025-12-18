@@ -76,13 +76,12 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     setVerifyingPayment(true);
     try {
       await refreshSub();
-      // Pequeño retardo para UI
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 1500)); // Delay estético para radar
       
       if (isPremiumUnlocked) {
         alert("✅ ¡Radar Sincronizado! Acceso Premium habilitado.");
       } else {
-        alert("🛰️ Radar de Pago: No detectamos transacciones recientes vinculadas a esta cuenta.\n\nNota: Si acabas de pagar, espera 30 segundos y reintenta.");
+        alert("🛰️ Radar de Pago: No detectamos transacciones recientes vinculadas a esta cuenta.\n\nNota: Si acabas de pagar, espera unos segundos y reintenta.");
       }
     } catch (err) {
       alert("Error en la conexión con la base.");
@@ -112,7 +111,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
     <div className="space-y-8 animate-[fadeIn_0.5s_ease-out]">
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} onSuccess={() => {}} />
 
-      {/* CABECERA DE ESTADÍSTICAS */}
+      {/* CABECERA DE ESTADÍSTICAS (SIEMPRE VISIBLE) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900/60 border border-slate-700/50 p-6 rounded-2xl flex items-center justify-between shadow-xl relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-transparent"></div>
@@ -134,7 +133,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* ANÁLISIS TÁCTICO */}
+      {/* ANÁLISIS TÁCTICO (SIEMPRE VISIBLE) */}
       <div className="glass-panel p-8 rounded-3xl border-l-4 border-cyan-500 shadow-2xl relative overflow-hidden">
         <div className="absolute -top-10 -right-10 opacity-5">
             <Navigation size={200} />
@@ -145,9 +144,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <p className="text-slate-300 leading-relaxed text-sm relative z-10">{result.analisis_mision}</p>
       </div>
 
-      {/* GRID DE DETALLES */}
+      {/* GRID DE DETALLES (PARCIALMENTE BLOQUEADO) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-slate-900/40 rounded-3xl p-7 border border-green-500/20 shadow-lg relative">
+        <div className="bg-slate-900/40 rounded-3xl p-7 border border-green-500/20 shadow-lg relative overflow-hidden">
           <h4 className="text-green-400 font-black mb-5 flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
             <ShieldCheck size={16} /> Propulsores Activos
           </h4>
@@ -155,7 +154,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             {result.puntos_fuertes.map((point, idx) => {
                const isLocked = !isPremiumUnlocked && idx >= 2;
                return (
-                  <li key={idx} className={`flex items-start gap-3 text-sm transition-all duration-700 ${isLocked ? 'blur-[5px] select-none opacity-20' : 'text-slate-300'}`}>
+                  <li key={idx} className={`flex items-start gap-3 text-sm transition-all duration-700 ${isLocked ? 'blur-[6px] select-none opacity-20' : 'text-slate-300'}`}>
                     <span className="mt-1 text-green-500 font-bold">{isLocked ? <Lock size={12}/> : '✓'}</span>
                     {isLocked ? "Contenido Premium Bloqueado" : point}
                   </li>
@@ -168,7 +167,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           <h4 className="text-red-400 font-black mb-5 flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
             <AlertTriangle size={16} /> Fugas Críticas
           </h4>
-          <div className={`space-y-4 ${!isPremiumUnlocked ? 'blur-[8px] select-none opacity-20' : ''}`}>
+          <div className={`space-y-4 transition-all duration-1000 ${!isPremiumUnlocked ? 'blur-[10px] select-none opacity-20' : ''}`}>
             {result.brechas_criticas.map((point, idx) => (
               <li key={idx} className="flex items-start gap-3 text-slate-300 text-sm">
                 <span className="text-red-500 mt-1">⚠</span> {point}
@@ -183,7 +182,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         </div>
       </div>
 
-      {/* PLAN DE VUELO - ZONA PREMIUM */}
+      {/* PLAN DE VUELO - ZONA PREMIUM BLOQUEADA */}
       <div className="bg-slate-950/90 rounded-[2.5rem] p-10 border border-slate-700/30 relative overflow-hidden shadow-[0_0_80px_rgba(0,0,0,0.6)]">
         <h3 className="text-xs font-black text-white mb-12 uppercase tracking-[0.4em] text-center border-b border-slate-800 pb-6">Hoja de Ruta Táctica</h3>
         
