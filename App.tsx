@@ -106,11 +106,11 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      // REGISTRO CRÍTICO: Guardamos el lead justo antes del análisis
-      // para asegurar que el registro existe antes de que el usuario llegue a los resultados.
-      await saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission);
+      // Fallback client-side save (opcional)
+      saveLead(formData.name, formData.email, formData.marketingConsent, formData.mission).catch(() => {});
       
-      const data = await analyzeCV(formData.file, formData.mission, formData.email, formData.name);
+      // La verdadera magia ahora ocurre dentro de analyzeCV -> /api/analyze (Servidor)
+      const data = await analyzeCV(formData.file, formData.mission, formData.email, formData.name, formData.marketingConsent);
       setResult(data);
       setLoading(false);
       setStep(4);

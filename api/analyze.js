@@ -1,6 +1,13 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
+import { createClient } from '@supabase/supabase-js';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// Inicialización de Supabase en Servidor (Usa Service Role para saltar RLS y asegurar el registro)
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = (supabaseUrl && supabaseServiceKey) ? createClient(supabaseUrl, supabaseServiceKey) : null;
 
 export default async function handler(req, res) {
   // 1. Configuración CORS
@@ -22,11 +29,36 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { fileBase64, mimeType, missionId, name } = req.body;
+    const { fileBase64, mimeType, missionId, name, email, marketingConsent } = req.body;
+
+    console.log(`[ANALYZER] 🚀 Iniciando análisis para: ${name} (${email}) | Misión: ${missionId}`);
 
     if (!process.env.API_KEY) {
-      console.error("Server Error: Missing API_KEY");
+      console.error("[ERROR] Missing API_KEY");
       return res.status(500).json({ error: 'Configuration Error: Missing API Key' });
+    }
+
+    // --- REGISTRO DE LEAD EN EL SERVIDOR (INFALIBLE) ---
+    if (supabase && email) {
+      try {
+        console.log(`[DB] Guardando lead para ${email}...`);
+        const { error: dbError } = await supabase
+          .from('cosmic_cv_leads')
+          .upsert({
+            email: email.toLowerCase().trim(),
+            name: name,
+            marketing_consent: marketingConsent || false,
+            mission_id: missionId,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'email' });
+
+        if (dbError) console.error("[DB ERROR] Error guardando lead:", dbError.message);
+        else console.log(`[DB SUCCESS] Lead registrado correctamente.`);
+      } catch (dbEx) {
+        console.error("[DB CRITICAL] Fallo en conexión con Supabase:", dbEx.message);
+      }
+    } else {
+      console.warn("[DB WARNING] Supabase no configurado en servidor o email ausente.");
     }
 
     if (!fileBase64 || !missionId || !name) {
@@ -81,14 +113,9 @@ export default async function handler(req, res) {
       required: ["nivel_actual", "probabilidad_exito", "analisis_mision", "puntos_fuertes", "brechas_criticas", "plan_de_vuelo"],
     };
 
-    console.log(`Iniciando análisis para ${name} (Misión: ${missionId})...`);
-
     let response;
     
-    // ESTRATEGIA DE INTENTO ÚNICO + FALLBACK (Sin esperas para no agotar los 10s de Vercel)
     try {
-      // Intento 1: Modelo Principal (Gemini 2.5 Flash)
-      console.log("Intentando con gemini-2.5-flash...");
       response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: {
@@ -101,13 +128,9 @@ export default async function handler(req, res) {
       });
     } catch (primaryError) {
       console.warn("Fallo modelo primario:", primaryError.message);
-      
-      // Si es error 503 (Sobrecarga), intentamos inmediatamente con el modelo anterior (más estable)
       if (primaryError.message?.includes('503') || primaryError.status === 503) {
-          console.log("⚠️ 2.5 Saturado. Activando propulsores auxiliares (gemini-2.0-flash)...");
-          try {
-            response = await ai.models.generateContent({
-                model: "gemini-2.0-flash", // Fallback a versión anterior estable
+          response = await ai.models.generateContent({
+                model: "gemini-2.0-flash",
                 contents: {
                   parts: [
                     { inlineData: { mimeType: mimeType || 'application/pdf', data: fileBase64 } },
@@ -116,12 +139,8 @@ export default async function handler(req, res) {
                 },
                 config: { systemInstruction, responseMimeType: "application/json", responseSchema },
             });
-          } catch (secondaryError) {
-             console.error("Fallo total de motores.");
-             throw secondaryError; // Si falla el backup, lanzamos el error original
-          }
       } else {
-          throw primaryError; // Si no es 503 (ej: 400 Bad Request), fallar directo
+          throw primaryError;
       }
     }
 
@@ -131,15 +150,8 @@ export default async function handler(req, res) {
     return res.status(200).json(JSON.parse(responseText));
 
   } catch (error) {
-    console.error("Error crítico en /api/analyze:", error);
-    
+    console.error("[ERROR CRÍTICO]:", error);
     const statusCode = error.status || 500;
-    let errorMessage = error.message || "Fallo crítico en el motor de análisis.";
-
-    if (errorMessage.includes('Quota')) {
-        return res.status(429).json({ error: "Límite de cuota alcanzado." });
-    }
-
-    return res.status(statusCode).json({ error: errorMessage });
+    return res.status(statusCode).json({ error: error.message || "Fallo en el motor de análisis." });
   }
 }
