@@ -60,11 +60,11 @@ export default async function handler(req, res) {
 
     console.log("[API] Enviando solicitud a Resend...");
 
-    // IMPORTANTE: Si usas 'onboarding@resend.dev', SOLO puedes enviar al correo con el que te registraste en Resend.
-    // Para enviar a otros correos, debes verificar tu propio dominio en el dashboard de Resend.
+    // Se utiliza el dominio verificado y se configura el reply_to solicitado
     const data = await resend.emails.send({
-      from: 'Analizador Cósmico de CV <onboarding@resend.dev>', 
+      from: 'Somos MAAS <hola@somosmaas.org>', 
       to: [email],
+      reply_to: 'rhfiguer@gmail.com',
       subject: `🚀 Reporte de Misión: ${name}`,
       html: emailHtml,
       attachments: [

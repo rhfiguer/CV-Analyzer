@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../types';
 import { ShieldCheck, AlertTriangle, Navigation, Star, Mail, CheckCircle, Lock, Unlock, Loader2, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
